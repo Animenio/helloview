@@ -1,0 +1,13 @@
+{
+  "name": "helloview",
+  "version": "1.0.0",
+  "description": "Stremio addon for VixSrc",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "stremio-addon-sdk": "^1.6.8",
+    "axios": "^1.6.0"
+  }
+}
