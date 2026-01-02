@@ -1,14 +1,16 @@
 {
   "name": "helloview",
   "version": "1.0.0",
-  "description": "Addon per Stremio con VixSrc",
+  "description": "Addon con estrazione",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "stremio-addon-sdk": "^1.6.8",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "user-agent-array": "^1.0.3"
   },
   "engines": {
     "node": ">=16.0.0"
