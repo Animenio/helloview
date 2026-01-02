@@ -1,72 +1,121 @@
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const axios = require("axios");
+const cheerio = require("cheerio");
 
-// --- PUNTO CRITICO: INSERISCI LA TUA CHIAVE QUI SOTTO ---
-// Esempio corretto: const TMDB_KEY = 'a1b2c3d4e5f6...';
-const TMDB_KEY = '8fb300665dd3bffe6ec5b08df4d68ed7'; 
-// --------------------------------------------------------
+// --- INSERISCI LA TUA CHIAVE QUI ---
+const TMDB_KEY = 'INCOLLA_LA_TUA_CHIAVE_VERA_QUI'; 
+// -----------------------------------
 
 const builder = new addonBuilder({
-    id: "org.helloview.addon",
-    version: "1.0.1",
-    name: "HelloView Player",
-    description: "Riproduci film e serie tramite VixSrc",
+    id: "org.helloview.extract",
+    version: "1.1.0",
+    name: "HelloView Extractor",
+    description: "Prova a estrarre il video diretto da VixSrc",
     resources: ["stream"],
     types: ["movie", "series"],
     catalogs: [],
     idPrefixes: ["tt"]
 });
 
+// Funzione helper per scaricare l'HTML fingendosi un browser
+async function fetchHTML(url) {
+    try {
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                'Referer': 'https://vixsrc.to/'
+            },
+            timeout: 5000 // Smette di cercare dopo 5 secondi
+        });
+        return response.data;
+    } catch (e) {
+        console.log("Errore download pagina:", e.message);
+        return null;
+    }
+}
+
 builder.defineStreamHandler(async ({ type, id }) => {
-    // Gestione ID serie (es. tt12345:1:5)
     let imdbId = id.split(":")[0];
     let season = id.split(":")[1];
     let episode = id.split(":")[2];
 
-    // Controllo se l'utente ha dimenticato di mettere la chiave
-    if (!TMDB_KEY || TMDB_KEY === 'INCOLLA_LA_TUA_CHIAVE_VERA_QUI') {
-        return Promise.resolve({ streams: [{ 
-            title: "⚠️ ERRORE: Inserisci API Key nel file server.js", 
-            externalUrl: "https://github.com" 
-        }] });
+    if (!TMDB_KEY || TMDB_KEY.includes('INCOLLA')) {
+        return Promise.resolve({ streams: [{ title: "⚠️ CONFIGURA API KEY", externalUrl: "https://github.com" }] });
     }
 
     try {
-        // 1. Chiamata a TMDB per convertire IMDB -> TMDB ID
-        const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id`;
-        const response = await axios.get(url);
+        // 1. Converti IMDB -> TMDB
+        const searchUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id`;
+        const searchRes = await axios.get(searchUrl);
         
         let tmdbId;
-        let finalUrl;
+        let vixUrl;
 
-        // 2. Costruzione URL VixSrc
-        if (type === 'movie' && response.data.movie_results.length > 0) {
-            tmdbId = response.data.movie_results[0].id;
-            finalUrl = `https://vixsrc.to/movie/${tmdbId}`;
+        if (type === 'movie' && searchRes.data.movie_results.length > 0) {
+            tmdbId = searchRes.data.movie_results[0].id;
+            vixUrl = `https://vixsrc.to/movie/${tmdbId}`;
         } 
-        else if (type === 'series' && response.data.tv_results.length > 0) {
-            tmdbId = response.data.tv_results[0].id;
-            // Se è una serie, servono stagione ed episodio
+        else if (type === 'series' && searchRes.data.tv_results.length > 0) {
+            tmdbId = searchRes.data.tv_results[0].id;
             if(season && episode) {
-                finalUrl = `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}`;
+                vixUrl = `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}`;
             }
         }
 
-        // 3. Risposta a Stremio
-        if (finalUrl) {
-            return Promise.resolve({ streams: [
-                {
-                    title: "🎬 Guarda su HelloView (VixSrc)",
-                    externalUrl: finalUrl
-                }
-            ]});
+        if (!vixUrl) return Promise.resolve({ streams: [] });
+
+        console.log(`Tentativo di estrazione da: ${vixUrl}`);
+        
+        // 2. TENTATIVO DI ESTRAZIONE (Scraping Leggero)
+        // Scarichiamo l'HTML della pagina VixSrc
+        const html = await fetchHTML(vixUrl);
+        let directLinks = [];
+
+        if (html) {
+            // Cerchiamo pattern comuni di file video nel codice sorgente
+            // Regex che cerca stringhe che finiscono con .m3u8 o .mp4
+            const regex = /(https?:\/\/[^"']+\.(?:m3u8|mp4))/g;
+            const matches = html.match(regex);
+
+            if (matches) {
+                // Rimuoviamo duplicati
+                const uniqueLinks = [...new Set(matches)];
+                
+                uniqueLinks.forEach(link => {
+                    // Spesso i link trovati sono delle pubblicità o trailer, ma proviamo
+                    directLinks.push({
+                        title: "⚡ Estratto (Direct Play)",
+                        url: link,
+                        behaviorHints: {
+                            notWebReady: true, // Suggerisce a Stremio di trattarlo con cura
+                            proxyHeaders: {
+                                "request": {
+                                    "Referer": "https://vixsrc.to/",
+                                    "Origin": "https://vixsrc.to"
+                                }
+                            }
+                        }
+                    });
+                });
+            }
         }
 
-    } catch (e) {
-        console.log("Errore durante la richiesta API:", e.message);
-    }
+        // 3. Risposta Finale
+        // Mettiamo prima i link estratti (se ci sono), poi il link browser come fallback
+        let streams = [
+            ...directLinks,
+            {
+                title: "🌐 Apri nel Browser (Fallback sicuro)",
+                externalUrl: vixUrl
+            }
+        ];
 
-    return Promise.resolve({ streams: [] });
+        return Promise.resolve({ streams: streams });
+
+    } catch (e) {
+        console.log("Errore generale:", e.message);
+        return Promise.resolve({ streams: [] });
+    }
 });
 
 const port = process.env.PORT || 7000;
