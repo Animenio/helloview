@@ -1,15 +1,14 @@
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const axios = require("axios");
 
-// --- CONFIGURAZIONE ---
-// Sostituisci la scritta qui sotto con la tua Chiave API di TMDB
-// Esempio: const TMDB_KEY = 'a1b2c3d4e5...';
-const TMDB_KEY = 'INCOLLA_QUI_LA_TUA_CHIAVE_TMDB'; 
-// ----------------------
+// --- PUNTO CRITICO: INSERISCI LA TUA CHIAVE QUI SOTTO ---
+// Esempio corretto: const TMDB_KEY = 'a1b2c3d4e5f6...';
+const TMDB_KEY = '8fb300665dd3bffe6ec5b08df4d68ed7'; 
+// --------------------------------------------------------
 
 const builder = new addonBuilder({
     id: "org.helloview.addon",
-    version: "1.0.0",
+    version: "1.0.1",
     name: "HelloView Player",
     description: "Riproduci film e serie tramite VixSrc",
     resources: ["stream"],
@@ -19,17 +18,17 @@ const builder = new addonBuilder({
 });
 
 builder.defineStreamHandler(async ({ type, id }) => {
-    console.log(`Richiesta ricevuta per: ${type} ${id}`);
-
     // Gestione ID serie (es. tt12345:1:5)
     let imdbId = id.split(":")[0];
     let season = id.split(":")[1];
     let episode = id.split(":")[2];
 
-    // Controllo sicurezza API Key
-    if (!TMDB_KEY || TMDB_KEY.includes('INCOLLA_QUI')) {
-        console.log("Errore: API Key mancante");
-        return Promise.resolve({ streams: [{ title: "⚠️ ERRORE: Inserisci API Key nel codice", externalUrl: "https://www.themoviedb.org/" }] });
+    // Controllo se l'utente ha dimenticato di mettere la chiave
+    if (!TMDB_KEY || TMDB_KEY === 'INCOLLA_LA_TUA_CHIAVE_VERA_QUI') {
+        return Promise.resolve({ streams: [{ 
+            title: "⚠️ ERRORE: Inserisci API Key nel file server.js", 
+            externalUrl: "https://github.com" 
+        }] });
     }
 
     try {
@@ -55,15 +54,12 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
         // 3. Risposta a Stremio
         if (finalUrl) {
-            console.log(`Link generato: ${finalUrl}`);
             return Promise.resolve({ streams: [
                 {
                     title: "🎬 Guarda su HelloView (VixSrc)",
                     externalUrl: finalUrl
                 }
             ]});
-        } else {
-            console.log("Nessun risultato trovato su TMDB");
         }
 
     } catch (e) {
@@ -73,6 +69,5 @@ builder.defineStreamHandler(async ({ type, id }) => {
     return Promise.resolve({ streams: [] });
 });
 
-// Avvio server su porta compatibile con Render
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port: port });
