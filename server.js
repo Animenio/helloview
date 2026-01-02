@@ -3,7 +3,7 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 
 // --- INSERISCI LA TUA CHIAVE QUI ---
-const TMDB_KEY = 'INCOLLA_LA_TUA_CHIAVE_VERA_QUI'; 
+const TMDB_KEY = '8fb300665dd3bffe6ec5b08df4d68ed7'; 
 // -----------------------------------
 
 const builder = new addonBuilder({
@@ -120,3 +120,4 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port: port });
+
