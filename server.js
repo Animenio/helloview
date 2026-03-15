@@ -9,7 +9,7 @@ const builder = new addonBuilder({
     id: "org.helloview.addon",
     version: "1.2.0",
     name: "HelloView Player",
-    description: "Riproduci film tramite VixSrc (Browser)",
+    description: "Riproduci film tramite VixSrc (Browser) in Italiano",
     resources: ["stream"],
     types: ["movie", "series"],
     catalogs: [],
@@ -36,21 +36,22 @@ builder.defineStreamHandler(async ({ type, id }) => {
         let tmdbId;
         let finalUrl;
 
+        // --- AGGIUNTO IL PARAMETRO ?lang=it AI LINK ---
         if (type === 'movie' && response.data.movie_results.length > 0) {
             tmdbId = response.data.movie_results[0].id;
-            finalUrl = `https://vixsrc.to/movie/${tmdbId}`;
+            finalUrl = `https://vixsrc.to/movie/${tmdbId}?lang=it`;
         } 
         else if (type === 'series' && response.data.tv_results.length > 0) {
             tmdbId = response.data.tv_results[0].id;
             if(season && episode) {
-                finalUrl = `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}`;
+                finalUrl = `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}?lang=it`;
             }
         }
 
         if (finalUrl) {
             return Promise.resolve({ streams: [
                 {
-                    title: "🌐 Guarda su VixSrc (Browser)",
+                    title: "🌐 Guarda su VixSrc (Italiano)",
                     externalUrl: finalUrl
                 }
             ]});
