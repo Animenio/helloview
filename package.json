@@ -1,7 +1,7 @@
 {
   "name": "helloview",
-  "version": "1.0.0",
-  "description": "Addon stabile per VixSrc",
+  "version": "1.2.0",
+  "description": "Addon stabile per VixSrc in Italiano",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
