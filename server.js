@@ -1,37 +1,37 @@
 const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 const PORT = process.env.PORT || 7000;
 const STREAMS_FILE = path.join(__dirname, 'streams.json');
 
-const DEMO_MOVIE_CATALOG_ID = 'authorized-demo-movies';
-const DEMO_SERIES_CATALOG_ID = 'authorized-demo-series';
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+const TMDB_BEARER_TOKEN = process.env.TMDB_BEARER_TOKEN;
+const TMDB_ENABLED = Boolean(TMDB_BEARER_TOKEN || TMDB_API_KEY);
+
+const MOVIE_CATALOG_ID = 'top';
+const DEMO_IMDB_IDS = ['tt1254207', 'tt0111161', 'tt0133093'];
 
 const manifest = {
   id: 'com.eugenio.privateaddon',
-  version: '1.0.2',
+  version: '1.0.4',
   name: 'Eugenio Private Addon',
   description: 'Private Stremio addon for authorized streams',
   resources: ['stream', 'catalog', 'meta'],
-  types: ['movie', 'series'],
+  types: ['movie'],
   idPrefixes: ['tt'],
   catalogs: [
     {
       type: 'movie',
-      id: DEMO_MOVIE_CATALOG_ID,
+      id: MOVIE_CATALOG_ID,
       name: 'Authorized Demo Movies'
-    },
-    {
-      type: 'series',
-      id: DEMO_SERIES_CATALOG_ID,
-      name: 'Authorized Demo Series'
     }
   ]
 };
 
 function emptyData() {
-  return { movieStreams: {}, seriesStreams: {}, movieMeta: {}, seriesMeta: {} };
+  return { movieStreams: {}, fallbackMovieMeta: {} };
 }
 
 function loadStreams() {
@@ -46,9 +46,7 @@ function loadStreams() {
 
     return {
       movieStreams: parsed && typeof parsed.movieStreams === 'object' && parsed.movieStreams !== null ? parsed.movieStreams : {},
-      seriesStreams: parsed && typeof parsed.seriesStreams === 'object' && parsed.seriesStreams !== null ? parsed.seriesStreams : {},
-      movieMeta: parsed && typeof parsed.movieMeta === 'object' && parsed.movieMeta !== null ? parsed.movieMeta : {},
-      seriesMeta: parsed && typeof parsed.seriesMeta === 'object' && parsed.seriesMeta !== null ? parsed.seriesMeta : {}
+      fallbackMovieMeta: parsed && typeof parsed.fallbackMovieMeta === 'object' && parsed.fallbackMovieMeta !== null ? parsed.fallbackMovieMeta : {}
     };
   } catch (error) {
     console.error(`[streams] Failed to load ${STREAMS_FILE}: ${error.message}`);
@@ -56,23 +54,183 @@ function loadStreams() {
   }
 }
 
-function toMetaPreview(meta) {
+function httpGetJson(url, headers = {}) {
+  if (typeof fetch === 'function') {
+    return fetch(url, { headers }).then(async (response) => {
+      const text = await response.text();
+      let json = null;
+
+      if (text) {
+        try {
+          json = JSON.parse(text);
+        } catch (error) {
+          throw new Error(`Invalid JSON response (${response.status})`);
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return json;
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers }, (res) => {
+      const chunks = [];
+
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        let parsedBody = null;
+
+        if (body) {
+          try {
+            parsedBody = JSON.parse(body);
+          } catch (error) {
+            reject(new Error(`Invalid JSON response (${res.statusCode})`));
+            return;
+          }
+        }
+
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+
+        resolve(parsedBody);
+      });
+    });
+
+    req.on('error', reject);
+  });
+}
+
+function buildPosterUrl(posterPath) {
+  if (typeof posterPath !== 'string' || posterPath.trim().length === 0) {
+    return null;
+  }
+  return `https://image.tmdb.org/t/p/w500${posterPath}`;
+}
+
+async function tmdbRequest(requestPath, query = {}) {
+  if (!TMDB_ENABLED) {
+    return null;
+  }
+
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && `${value}`.length > 0) {
+      params.set(key, `${value}`);
+    }
+  });
+
+  const headers = {
+    Accept: 'application/json'
+  };
+
+  if (TMDB_BEARER_TOKEN) {
+    headers.Authorization = `Bearer ${TMDB_BEARER_TOKEN}`;
+  } else if (TMDB_API_KEY) {
+    params.set('api_key', TMDB_API_KEY);
+  }
+
+  const qs = params.toString();
+  const url = `https://api.themoviedb.org/3${requestPath}${qs ? `?${qs}` : ''}`;
+  return httpGetJson(url, headers);
+}
+
+async function getMovieByImdbId(imdbId) {
+  if (!imdbId) {
+    return null;
+  }
+
+  try {
+    const result = await tmdbRequest(`/find/${encodeURIComponent(imdbId)}`, { external_source: 'imdb_id' });
+    const movie = result && Array.isArray(result.movie_results) ? result.movie_results[0] : null;
+
+    if (!movie || !movie.id) {
+      console.log(`[tmdb] lookup failure imdbId=${imdbId}`);
+      return null;
+    }
+
+    const details = await tmdbRequest(`/movie/${movie.id}`);
+    const merged = {
+      ...movie,
+      ...(details && typeof details === 'object' ? details : {})
+    };
+
+    console.log(`[tmdb] lookup success imdbId=${imdbId}`);
+    return merged;
+  } catch (error) {
+    console.log(`[tmdb] lookup failure imdbId=${imdbId}`);
+    return null;
+  }
+}
+
+function toMetaPreviewFromTmdb(imdbId, movie) {
+  if (!movie) {
+    return null;
+  }
+
+  const releaseYear = typeof movie.release_date === 'string' && movie.release_date.length >= 4
+    ? movie.release_date.slice(0, 4)
+    : undefined;
+
+  return {
+    id: imdbId,
+    type: 'movie',
+    name: movie.title || imdbId,
+    poster: buildPosterUrl(movie.poster_path),
+    description: movie.overview || undefined,
+    releaseInfo: releaseYear
+  };
+}
+
+function toMetaFromTmdb(imdbId, movie) {
+  if (!movie) {
+    return null;
+  }
+
+  const preview = toMetaPreviewFromTmdb(imdbId, movie);
+  const genres = Array.isArray(movie.genres) ? movie.genres.map((genre) => genre && genre.name).filter((name) => typeof name === 'string' && name.trim().length > 0) : [];
+
+  return {
+    ...preview,
+    genres
+  };
+}
+
+function toFallbackPreview(meta) {
   if (!meta || typeof meta !== 'object') {
     return null;
   }
 
-  const preview = {
+  return {
     id: meta.id,
-    type: meta.type,
+    type: 'movie',
     name: meta.name,
-    poster: meta.poster
+    poster: meta.poster,
+    description: meta.description,
+    releaseInfo: meta.releaseInfo
   };
+}
 
-  if (typeof meta.description === 'string' && meta.description.trim().length > 0) {
-    preview.description = meta.description;
+function toFallbackMeta(meta) {
+  if (!meta || typeof meta !== 'object') {
+    return null;
   }
 
-  return preview;
+  return {
+    id: meta.id,
+    type: 'movie',
+    name: meta.name,
+    poster: meta.poster,
+    description: meta.description,
+    releaseInfo: meta.releaseInfo,
+    genres: Array.isArray(meta.genres) ? meta.genres : []
+  };
 }
 
 function sanitizeStreams(items) {
@@ -116,39 +274,59 @@ builder.defineCatalogHandler(async ({ type, id }) => {
   console.log(`[catalog] request type=${type} id=${id}`);
   const data = loadStreams();
 
-  if (type === 'movie' && id === DEMO_MOVIE_CATALOG_ID) {
-    const metas = Object.values(data.movieMeta)
-      .map(toMetaPreview)
-      .filter(Boolean);
-    console.log(`[catalog] response metas=${metas.length}`);
-    return { metas };
+  if (type !== 'movie' || id !== MOVIE_CATALOG_ID) {
+    console.log('[catalog] response metas=0 (unsupported catalog)');
+    return { metas: [] };
   }
 
-  if (type === 'series' && id === DEMO_SERIES_CATALOG_ID) {
-    const metas = Object.values(data.seriesMeta)
-      .map(toMetaPreview)
-      .filter(Boolean);
-    console.log(`[catalog] response metas=${metas.length}`);
-    return { metas };
+  const metas = [];
+  for (const imdbId of DEMO_IMDB_IDS) {
+    let meta = null;
+
+    if (TMDB_ENABLED) {
+      const tmdbMovie = await getMovieByImdbId(imdbId);
+      meta = toMetaPreviewFromTmdb(imdbId, tmdbMovie);
+    }
+
+    if (!meta) {
+      meta = toFallbackPreview(data.fallbackMovieMeta[imdbId]);
+    }
+
+    if (meta) {
+      metas.push(meta);
+    }
   }
 
-  console.log('[catalog] response metas=0 (unsupported catalog)');
-  return { metas: [] };
+  console.log(`[catalog] response metas=${metas.length}`);
+  return { metas };
 });
 
 builder.defineMetaHandler(async ({ type, id }) => {
-  console.log(`[meta] request type=${type} id=${id}`);
-  const data = loadStreams();
-  const source = type === 'movie' ? data.movieMeta : type === 'series' ? data.seriesMeta : null;
-  const meta = source && source[id] ? source[id] : null;
+  console.log(`[meta] request id=${id}`);
 
-  return { meta };
+  if (type !== 'movie') {
+    return { meta: null };
+  }
+
+  const data = loadStreams();
+
+  if (TMDB_ENABLED) {
+    const tmdbMovie = await getMovieByImdbId(id);
+    const tmdbMeta = toMetaFromTmdb(id, tmdbMovie);
+
+    if (tmdbMeta) {
+      return { meta: tmdbMeta };
+    }
+  }
+
+  const fallbackMeta = toFallbackMeta(data.fallbackMovieMeta[id]);
+  return { meta: fallbackMeta || null };
 });
 
 builder.defineStreamHandler(async ({ type, id }) => {
-  console.log(`[stream] request type=${type} id=${id}`);
+  console.log(`[stream] request id=${id}`);
   const data = loadStreams();
-  const source = type === 'movie' ? data.movieStreams : type === 'series' ? data.seriesStreams : null;
+  const source = type === 'movie' ? data.movieStreams : null;
 
   if (!source || !source[id]) {
     console.log('[stream] response streams=0');
@@ -168,3 +346,4 @@ serveHTTP(builder.getInterface(), { port: PORT });
 console.log(`[startup] Eugenio Private Addon started on port ${PORT}`);
 console.log(`[startup] Local manifest URL: http://localhost:${PORT}/manifest.json`);
 console.log(`[startup] Streams source file: ${STREAMS_FILE}`);
+console.log(`[startup] TMDB enabled: ${TMDB_ENABLED ? 'yes' : 'no'}`);
