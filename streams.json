@@ -12,28 +12,22 @@
       "id": "tt1254207",
       "type": "movie",
       "name": "Big Buck Bunny Demo",
-      "poster": "https://image.tmdb.org/t/p/w500/PLACEHOLDER.jpg",
-      "description": "Fallback demo movie.",
-      "releaseInfo": "2008",
-      "genres": ["Animation"]
+      "poster": null,
+      "description": "Fallback demo movie."
     },
     "tt0111161": {
       "id": "tt0111161",
       "type": "movie",
       "name": "The Shawshank Redemption",
-      "poster": "https://image.tmdb.org/t/p/w500/PLACEHOLDER.jpg",
-      "description": "Fallback metadata when TMDB is unavailable.",
-      "releaseInfo": "1994",
-      "genres": ["Drama"]
+      "poster": null,
+      "description": "Fallback metadata."
     },
     "tt0133093": {
       "id": "tt0133093",
       "type": "movie",
       "name": "The Matrix",
-      "poster": "https://image.tmdb.org/t/p/w500/PLACEHOLDER.jpg",
-      "description": "Fallback metadata when TMDB is unavailable.",
-      "releaseInfo": "1999",
-      "genres": ["Action", "Science Fiction"]
+      "poster": null,
+      "description": "Fallback metadata."
     }
   }
 }

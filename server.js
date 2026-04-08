@@ -109,7 +109,7 @@ function httpGetJson(url, headers = {}) {
 
 function buildPosterUrl(posterPath) {
   if (typeof posterPath !== 'string' || posterPath.trim().length === 0) {
-    return undefined;
+    return null;
   }
   return `https://image.tmdb.org/t/p/w500${posterPath}`;
 }
@@ -150,13 +150,19 @@ async function getMovieByImdbId(imdbId) {
     const result = await tmdbRequest(`/find/${encodeURIComponent(imdbId)}`, { external_source: 'imdb_id' });
     const movie = result && Array.isArray(result.movie_results) ? result.movie_results[0] : null;
 
-    if (!movie) {
+    if (!movie || !movie.id) {
       console.log(`[tmdb] lookup failure imdbId=${imdbId}`);
       return null;
     }
 
+    const details = await tmdbRequest(`/movie/${movie.id}`);
+    const merged = {
+      ...movie,
+      ...(details && typeof details === 'object' ? details : {})
+    };
+
     console.log(`[tmdb] lookup success imdbId=${imdbId}`);
-    return movie;
+    return merged;
   } catch (error) {
     console.log(`[tmdb] lookup failure imdbId=${imdbId}`);
     return null;
@@ -188,7 +194,7 @@ function toMetaFromTmdb(imdbId, movie) {
   }
 
   const preview = toMetaPreviewFromTmdb(imdbId, movie);
-  const genres = Array.isArray(movie.genre_ids) ? movie.genre_ids.map((id) => `${id}`) : [];
+  const genres = Array.isArray(movie.genres) ? movie.genres.map((genre) => genre && genre.name).filter((name) => typeof name === 'string' && name.trim().length > 0) : [];
 
   return {
     ...preview,
@@ -296,7 +302,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
 });
 
 builder.defineMetaHandler(async ({ type, id }) => {
-  console.log(`[meta] request type=${type} id=${id}`);
+  console.log(`[meta] request id=${id}`);
 
   if (type !== 'movie') {
     return { meta: null };
@@ -318,7 +324,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
 });
 
 builder.defineStreamHandler(async ({ type, id }) => {
-  console.log(`[stream] request type=${type} id=${id}`);
+  console.log(`[stream] request id=${id}`);
   const data = loadStreams();
   const source = type === 'movie' ? data.movieStreams : null;
 

@@ -32,9 +32,9 @@ Catalog responses return preview metas (`id`, `type`, `name`, `poster`, optional
 `meta` responses return full movie metadata including `genres`.
 
 ## TMDB configuration
-Set TMDB credentials **only** as Render environment variables:
-- `TMDB_BEARER_TOKEN` (preferred)
-- `TMDB_API_KEY` (fallback only if bearer token is not set)
+Render provides TMDB credentials via environment variables:
+- `TMDB_BEARER_TOKEN` (preferred at runtime)
+- `TMDB_API_KEY` (used only as fallback if bearer token is missing)
 
 Rules:
 - Do **not** commit TMDB keys/tokens in the repository.
@@ -65,8 +65,8 @@ Useful logs include:
 - TMDB enabled `yes/no`
 - catalog request `type/id`
 - TMDB lookup success/failure per IMDb ID
-- meta request `type/id`
-- stream request `type/id`
+- meta request `id`
+- stream request `id`
 
 ## Deploy on Render
 1. Push the repository to GitHub.
