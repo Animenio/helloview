@@ -3,40 +3,38 @@
 ## Overview
 This is a minimal private Stremio addon (Node.js + CommonJS + `stremio-addon-sdk`) for **authorized streams only**.
 
-The addon keeps stream mappings in `streams.json` and exposes:
-- `stream` resource (main functionality)
-- `catalog` resource (demo catalogs for direct in-app testing)
-- `meta` resource (metadata used by demo catalogs)
+The addon keeps stream and meta mappings in `streams.json` and exposes:
+- `stream` resource
+- `catalog` resource (demo catalogs for in-app testing)
+- `meta` resource
 
-## Why the addon may not appear as a source
-Stremio shows an addon source in a content page only when the addon returns at least one stream for the requested content ID.
+## Data model in `streams.json`
+The file uses four top-level objects:
+- `movieStreams`
+- `seriesStreams`
+- `movieMeta`
+- `seriesMeta`
 
-If your addon is stream-only and the requested ID is not present in `streams.json`, the stream handler returns an empty list and Stremio shows no source for that title. This is expected behavior.
+### Critical ID rule
+- **Movies:** same ID for meta and stream (example: `tt1254207`).
+- **Series:** series meta ID is separate from episode/stream IDs.
+  - series meta ID example: `tt1748166`
+  - episode stream ID example: `tt1748166:1:1`
 
-In this project:
-- movies are mapped by IMDb IDs (example: `tt1254207`)
-- series episodes are mapped by `tt:season:episode` IDs (example: `tt1748166:1:1`)
+If a series uses an episode-like ID (`tt...:1:1`) as the **series meta ID**, Stremio catalogs may not appear correctly.
 
-If the queried ID does not exactly match a key in `streams.json`, you will get no streams.
-
-## Demo catalogs for testing
-To make testing reliable directly inside Stremio, the addon provides two internal demo catalogs:
+## Demo catalogs
+The addon provides two internal demo catalogs:
 - `authorized-demo-movies`
 - `authorized-demo-series`
 
-These catalogs are fed by `streams.json.meta` and point to IDs that also exist in `streams.json.movie` / `streams.json.series`.
-
-Default demo IDs included:
+Default demo entries:
 - Movie demo: `tt1254207`
-- Series demo episode: `tt1748166:1:1`
+- Series demo (meta): `tt1748166`
+- Series episode stream: `tt1748166:1:1`
 
-How to use the demo catalogs:
-1. Install the addon in Stremio.
-2. Open the addon catalogs.
-3. Open one demo item.
-4. Verify that at least one stream is returned.
-
-After verifying, replace demo entries in `streams.json` with your own authorized streams.
+Catalog responses return **preview metas only** (`id`, `type`, `name`, `poster`, optional `description`).
+Full series metadata with `videos` is returned by the `meta` resource.
 
 ## Local run
 1. Install dependencies:
@@ -50,11 +48,10 @@ After verifying, replace demo entries in `streams.json` with your own authorized
 3. Manifest URL:
    - `http://localhost:7000/manifest.json`
 
-Useful startup logs include:
-- addon startup confirmation
-- local manifest URL
-- catalog/meta/stream request traces
-- number of streams returned per stream request
+Useful logs include:
+- catalog request `type/id` + returned meta count
+- meta request `type/id`
+- stream request `type/id` + returned stream count
 
 ## Deploy on Render
 1. Push the repository to GitHub.
@@ -65,20 +62,15 @@ Useful startup logs include:
 4. Deployed manifest URL:
    - `https://<service-name>.onrender.com/manifest.json`
 
-Render Free note:
-- cold starts are possible after inactivity, so the first request can be slow.
-
 ## Install in Stremio
-1. Copy your manifest URL:
-   - local: `http://localhost:7000/manifest.json`
-   - deployed: `https://<service-name>.onrender.com/manifest.json`
+1. Copy your manifest URL.
 2. Open Stremio → Addons.
 3. Choose **Install via URL**.
 4. Paste the manifest URL and install.
-5. Open the demo catalogs and test one demo item.
+5. Open demo catalogs and test demo items.
 
-## Important limitations
-- This addon is only for streams you control and are authorized to use.
-- No scraping, no torrent integrations, no third-party source resolvers.
-- No TMDB API integration and no IMDb→TMDB conversion logic.
-- `streams.json` is static file-based configuration; restart/redeploy after updates.
+## Limitations
+- Only for streams you control and are authorized to use.
+- No scraping.
+- No TMDB integration.
+- No database.
