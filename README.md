@@ -62,11 +62,11 @@ Credit note:
    - `http://localhost:7000/manifest.json`
 
 Useful logs include:
-- TMDB enabled `yes/no`
+- TMDB enabled `bearer=yes/no, apiKey=yes/no`
 - catalog request `type/id`
 - TMDB lookup success/failure per IMDb ID
-- meta request `id`
-- stream request `id`
+- meta request `type/id`
+- stream request `type/id`
 
 ## Deploy on Render
 1. Push the repository to GitHub.
@@ -79,6 +79,12 @@ Useful logs include:
    - optionally `TMDB_API_KEY`
 5. Deployed manifest URL:
    - `https://<service-name>.onrender.com/manifest.json`
+
+## TMDB troubleshooting
+- If `TMDB_BEARER_TOKEN` / `TMDB_API_KEY` are not active in your Render deploy, the addon still serves catalog/meta using local `fallbackMovieMeta`.
+- The catalog should **not** disappear when TMDB fails (timeout, auth, endpoint, rate limit): fallback metadata keeps the addon visible in Stremio.
+- After adding or changing env vars in Render, trigger a new deploy/restart of the service so runtime picks up the new values.
+- TMDB is used **only** for metadata (catalog/meta), never for stream playback.
 
 ## Install in Stremio
 1. Copy your manifest URL.
