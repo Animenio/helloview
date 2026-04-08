@@ -1,7 +1,6 @@
 const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 
 const PORT = process.env.PORT || 7000;
 const STREAMS_FILE = path.join(__dirname, 'streams.json');
@@ -10,12 +9,12 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BEARER_TOKEN = process.env.TMDB_BEARER_TOKEN;
 const TMDB_ENABLED = Boolean(TMDB_BEARER_TOKEN || TMDB_API_KEY);
 
-const MOVIE_CATALOG_ID = 'top';
+const MOVIE_CATALOG_ID = 'eugenio_top';
 const DEMO_IMDB_IDS = ['tt1254207', 'tt0111161', 'tt0133093'];
 
 const manifest = {
   id: 'com.eugenio.privateaddon',
-  version: '1.0.4',
+  version: '1.0.5',
   name: 'Eugenio Private Addon',
   description: 'Private Stremio addon for authorized streams',
   resources: ['stream', 'catalog', 'meta'],
@@ -54,69 +53,20 @@ function loadStreams() {
   }
 }
 
-function httpGetJson(url, headers = {}) {
-  if (typeof fetch === 'function') {
-    return fetch(url, { headers }).then(async (response) => {
-      const text = await response.text();
-      let json = null;
-
-      if (text) {
-        try {
-          json = JSON.parse(text);
-        } catch (error) {
-          throw new Error(`Invalid JSON response (${response.status})`);
-        }
-      }
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      return json;
-    });
-  }
-
-  return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers }, (res) => {
-      const chunks = [];
-
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8');
-        let parsedBody = null;
-
-        if (body) {
-          try {
-            parsedBody = JSON.parse(body);
-          } catch (error) {
-            reject(new Error(`Invalid JSON response (${res.statusCode})`));
-            return;
-          }
-        }
-
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          reject(new Error(`HTTP ${res.statusCode}`));
-          return;
-        }
-
-        resolve(parsedBody);
-      });
-    });
-
-    req.on('error', reject);
-  });
-}
-
 function buildPosterUrl(posterPath) {
   if (typeof posterPath !== 'string' || posterPath.trim().length === 0) {
-    return null;
+    return undefined;
   }
   return `https://image.tmdb.org/t/p/w500${posterPath}`;
 }
 
 async function tmdbRequest(requestPath, query = {}) {
   if (!TMDB_ENABLED) {
-    return null;
+    return { ok: false, status: 0, error: 'tmdb_disabled' };
+  }
+
+  if (typeof fetch !== 'function') {
+    return { ok: false, status: 0, error: 'fetch_unavailable' };
   }
 
   const params = new URLSearchParams();
@@ -138,7 +88,41 @@ async function tmdbRequest(requestPath, query = {}) {
 
   const qs = params.toString();
   const url = `https://api.themoviedb.org/3${requestPath}${qs ? `?${qs}` : ''}`;
-  return httpGetJson(url, headers);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: controller.signal
+    });
+
+    const text = await response.text();
+    let data = null;
+
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (error) {
+        return { ok: false, status: response.status, error: 'invalid_json' };
+      }
+    }
+
+    if (!response.ok) {
+      const reason = (data && (data.status_message || data.message)) || `http_${response.status}`;
+      return { ok: false, status: response.status, error: reason };
+    }
+
+    return { ok: true, status: response.status, data };
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      return { ok: false, status: 0, error: 'timeout' };
+    }
+    return { ok: false, status: 0, error: 'network_error' };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function getMovieByImdbId(imdbId) {
@@ -146,27 +130,23 @@ async function getMovieByImdbId(imdbId) {
     return null;
   }
 
-  try {
-    const result = await tmdbRequest(`/find/${encodeURIComponent(imdbId)}`, { external_source: 'imdb_id' });
-    const movie = result && Array.isArray(result.movie_results) ? result.movie_results[0] : null;
+  console.log(`[tmdb] lookup start imdbId=${imdbId}`);
+  const result = await tmdbRequest(`/find/${encodeURIComponent(imdbId)}`, { external_source: 'imdb_id' });
 
-    if (!movie || !movie.id) {
-      console.log(`[tmdb] lookup failure imdbId=${imdbId}`);
-      return null;
-    }
-
-    const details = await tmdbRequest(`/movie/${movie.id}`);
-    const merged = {
-      ...movie,
-      ...(details && typeof details === 'object' ? details : {})
-    };
-
-    console.log(`[tmdb] lookup success imdbId=${imdbId}`);
-    return merged;
-  } catch (error) {
-    console.log(`[tmdb] lookup failure imdbId=${imdbId}`);
+  if (!result.ok) {
+    console.log(`[tmdb] lookup failed imdbId=${imdbId} status=${result.status} reason=${result.error}`);
     return null;
   }
+
+  const movie = result.data && Array.isArray(result.data.movie_results) ? result.data.movie_results[0] : null;
+
+  if (!movie) {
+    console.log(`[tmdb] lookup failed imdbId=${imdbId} status=${result.status} reason=not_found`);
+    return null;
+  }
+
+  console.log(`[tmdb] lookup success imdbId=${imdbId} status=${result.status}`);
+  return movie;
 }
 
 function toMetaPreviewFromTmdb(imdbId, movie) {
@@ -211,7 +191,7 @@ function toFallbackPreview(meta) {
     id: meta.id,
     type: 'movie',
     name: meta.name,
-    poster: meta.poster,
+    poster: meta.poster || undefined,
     description: meta.description,
     releaseInfo: meta.releaseInfo
   };
@@ -226,7 +206,7 @@ function toFallbackMeta(meta) {
     id: meta.id,
     type: 'movie',
     name: meta.name,
-    poster: meta.poster,
+    poster: meta.poster || undefined,
     description: meta.description,
     releaseInfo: meta.releaseInfo,
     genres: Array.isArray(meta.genres) ? meta.genres : []
@@ -282,6 +262,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
   const metas = [];
   for (const imdbId of DEMO_IMDB_IDS) {
     let meta = null;
+    let fallbackUsed = false;
 
     if (TMDB_ENABLED) {
       const tmdbMovie = await getMovieByImdbId(imdbId);
@@ -290,7 +271,10 @@ builder.defineCatalogHandler(async ({ type, id }) => {
 
     if (!meta) {
       meta = toFallbackPreview(data.fallbackMovieMeta[imdbId]);
+      fallbackUsed = true;
     }
+
+    console.log(`[catalog] imdbId=${imdbId} fallback used ${fallbackUsed ? 'yes' : 'no'}`);
 
     if (meta) {
       metas.push(meta);
@@ -302,7 +286,7 @@ builder.defineCatalogHandler(async ({ type, id }) => {
 });
 
 builder.defineMetaHandler(async ({ type, id }) => {
-  console.log(`[meta] request id=${id}`);
+  console.log(`[meta] request type=${type} id=${id}`);
 
   if (type !== 'movie') {
     return { meta: null };
@@ -324,7 +308,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
 });
 
 builder.defineStreamHandler(async ({ type, id }) => {
-  console.log(`[stream] request id=${id}`);
+  console.log(`[stream] request type=${type} id=${id}`);
   const data = loadStreams();
   const source = type === 'movie' ? data.movieStreams : null;
 
@@ -346,4 +330,4 @@ serveHTTP(builder.getInterface(), { port: PORT });
 console.log(`[startup] Eugenio Private Addon started on port ${PORT}`);
 console.log(`[startup] Local manifest URL: http://localhost:${PORT}/manifest.json`);
 console.log(`[startup] Streams source file: ${STREAMS_FILE}`);
-console.log(`[startup] TMDB enabled: ${TMDB_ENABLED ? 'yes' : 'no'}`);
+console.log(`[startup] TMDB enabled: bearer=${TMDB_BEARER_TOKEN ? 'yes' : 'no'}, apiKey=${TMDB_API_KEY ? 'yes' : 'no'}`);
