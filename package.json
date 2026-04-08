@@ -1,17 +1,14 @@
 {
-  "name": "helloview",
-  "version": "1.2.0",
-  "description": "Addon stabile per VixSrc in Italiano",
+  "name": "private-stremio-addon",
+  "version": "1.0.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "stremio-addon-sdk": "^1.6.8",
-    "axios": "^1.6.0"
+    "stremio-addon-sdk": "^1.6.8"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18"
   }
 }
-

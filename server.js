@@ -1,68 +1,99 @@
-const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
-const axios = require("axios");
+const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
+const fs = require('fs');
+const path = require('path');
 
-// --- INSERISCI LA TUA CHIAVE API QUI SOTTO ---
-const TMDB_KEY = '8fb300665dd3bffe6ec5b08df4d68ed7'; 
-// ---------------------------------------------
+const PORT = process.env.PORT || 7000;
+const STREAMS_FILE = path.join(__dirname, 'streams.json');
 
-const builder = new addonBuilder({
-    id: "org.helloview.addon",
-    version: "1.2.0",
-    name: "HelloView Player",
-    description: "Riproduci film tramite VixSrc (Browser) in Italiano",
-    resources: ["stream"],
-    types: ["movie", "series"],
-    catalogs: [],
-    idPrefixes: ["tt"]
-});
+const manifest = {
+  id: 'com.eugenio.privateaddon',
+  version: '1.0.0',
+  name: 'Eugenio Private Addon',
+  description: 'Private Stremio addon for authorized streams',
+  resources: ['stream'],
+  types: ['movie', 'series'],
+  catalogs: [],
+  idPrefixes: ['tt']
+};
+
+function loadStreams() {
+  try {
+    if (!fs.existsSync(STREAMS_FILE)) {
+      console.warn(`[streams] File not found: ${STREAMS_FILE}. Returning empty catalog.`);
+      return { movie: {}, series: {} };
+    }
+
+    const raw = fs.readFileSync(STREAMS_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    return {
+      movie: parsed && typeof parsed.movie === 'object' && parsed.movie !== null ? parsed.movie : {},
+      series: parsed && typeof parsed.series === 'object' && parsed.series !== null ? parsed.series : {}
+    };
+  } catch (error) {
+    console.error(`[streams] Failed to load ${STREAMS_FILE}: ${error.message}`);
+    return { movie: {}, series: {} };
+  }
+}
+
+function sanitizeStreams(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .filter((item) => item && typeof item === 'object')
+    .filter((item) => {
+      if (typeof item.title !== 'string' || item.title.trim().length === 0) {
+        return false;
+      }
+
+      if (typeof item.url === 'string') {
+        return /^https?:\/\//i.test(item.url);
+      }
+
+      if (typeof item.externalUrl === 'string') {
+        return /^https?:\/\//i.test(item.externalUrl);
+      }
+
+      return false;
+    })
+    .map((item) => {
+      const stream = { title: item.title };
+
+      if (typeof item.url === 'string' && /^https?:\/\//i.test(item.url)) {
+        stream.url = item.url;
+      } else if (typeof item.externalUrl === 'string' && /^https?:\/\//i.test(item.externalUrl)) {
+        stream.externalUrl = item.externalUrl;
+      }
+
+      if (item.behaviorHints && typeof item.behaviorHints === 'object') {
+        stream.behaviorHints = item.behaviorHints;
+      }
+
+      return stream;
+    });
+}
+
+const builder = new addonBuilder(manifest);
 
 builder.defineStreamHandler(async ({ type, id }) => {
-    // Parsing dell'ID
-    let imdbId = id.split(":")[0];
-    let season = id.split(":")[1];
-    let episode = id.split(":")[2];
+  const data = loadStreams();
+  const source = type === 'movie' ? data.movie : type === 'series' ? data.series : null;
 
-    // Controllo Sicurezza Chiave
-    if (!TMDB_KEY || TMDB_KEY.includes('INCOLLA')) {
-        console.log("Errore: Chiave API mancante");
-        return Promise.resolve({ streams: [{ title: "⚠️ ERRORE: Manca API Key nel file server.js", externalUrl: "https://github.com" }] });
-    }
+  if (!source || !source[id]) {
+    return { streams: [] };
+  }
 
-    try {
-        // Conversione ID (IMDB -> TMDB)
-        const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_KEY}&external_source=imdb_id`;
-        const response = await axios.get(url);
-        
-        let tmdbId;
-        let finalUrl;
+  const entry = source[id];
+  const items = Array.isArray(entry) ? entry : [entry];
+  const streams = sanitizeStreams(items);
 
-        // --- AGGIUNTO IL PARAMETRO ?lang=it AI LINK ---
-        if (type === 'movie' && response.data.movie_results.length > 0) {
-            tmdbId = response.data.movie_results[0].id;
-            finalUrl = `https://vixsrc.to/movie/${tmdbId}?lang=it`;
-        } 
-        else if (type === 'series' && response.data.tv_results.length > 0) {
-            tmdbId = response.data.tv_results[0].id;
-            if(season && episode) {
-                finalUrl = `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}?lang=it`;
-            }
-        }
-
-        if (finalUrl) {
-            return Promise.resolve({ streams: [
-                {
-                    title: "🌐 Guarda su VixSrc (Italiano)",
-                    externalUrl: finalUrl
-                }
-            ]});
-        }
-
-    } catch (e) {
-        console.log("Errore:", e.message);
-    }
-
-    return Promise.resolve({ streams: [] });
+  return { streams };
 });
 
-const port = process.env.PORT || 7000;
-serveHTTP(builder.getInterface(), { port: port });
+serveHTTP(builder.getInterface(), { port: PORT });
+
+console.log(`[startup] Eugenio Private Addon listening on port ${PORT}`);
+console.log(`[startup] Local manifest URL: http://localhost:${PORT}/manifest.json`);
+console.log(`[startup] Streams source file: ${STREAMS_FILE}`);
