@@ -15,7 +15,7 @@ const manifest = {
   name: 'Eugenio Private Addon',
   description: 'Private Stremio addon for authorized streams',
   resources: ['stream'],
-  types: ['movie'],
+  types: ['movie', 'series'],
   idPrefixes: ['tt'],
   catalogs: []
 };
@@ -235,7 +235,7 @@ function findAuthorizedMovieStream({ imdbId, title, originalTitle, year }, autho
 const builder = new addonBuilder(manifest);
 
 builder.defineStreamHandler(async (args) => {
-  const imdbId = args && args.type === 'movie' ? args.id : null;
+  const imdbId = args ? args.id : null;
   console.log(`[stream] request imdbId=${imdbId || 'n/a'}`);
 
   if (!imdbId) {
