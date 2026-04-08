@@ -1,130 +1,88 @@
-const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
+const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 
 const PORT = process.env.PORT || 7000;
 
-// TMDB è necessario per convertire l'IMDb ID fornito da Stremio nel TMDB ID richiesto da VixSrc
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
+// Le credenziali TMDB vengono lette dalle Environment Variables di Render
 const TMDB_BEARER_TOKEN = process.env.TMDB_BEARER_TOKEN;
-const TMDB_ENABLED = Boolean(TMDB_BEARER_TOKEN || TMDB_API_KEY);
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+
+// Funzione per convertire IMDb ID in TMDB ID
+async function getTmdbId(imdbId) {
+    if (!TMDB_BEARER_TOKEN && !TMDB_API_KEY) {
+        console.log("⚠️ Credenziali TMDB mancanti.");
+        return null;
+    }
+
+    const headers = { accept: 'application/json' };
+    if (TMDB_BEARER_TOKEN) {
+        headers.Authorization = `Bearer ${TMDB_BEARER_TOKEN}`;
+    }
+
+    const url = `https://api.themoviedb.org/3/find/${imdbId}?external_source=imdb_id${TMDB_API_KEY && !TMDB_BEARER_TOKEN ? `&api_key=${TMDB_API_KEY}` : ''}`;
+    
+    try {
+        const res = await fetch(url, { headers });
+        const data = await res.json();
+        
+        if (data.movie_results && data.movie_results.length > 0) {
+            return data.movie_results[0].id;
+        }
+        if (data.tv_results && data.tv_results.length > 0) {
+            return data.tv_results[0].id;
+        }
+    } catch (e) {
+        console.error("Errore durante la chiamata a TMDB:", e.message);
+    }
+    return null;
+}
 
 const manifest = {
-  id: 'com.eugenio.vixsrcaddon',
-  version: '1.3.0',
-  name: 'VixSrc Addon',
-  description: 'Provider stream basato sulle API di VixSrc',
-  resources: ['stream'],
-  types: ['movie', 'series'], // Aggiunto il supporto alle serie TV
-  idPrefixes: ['tt'],
-  catalogs: []
+    id: "org.helloview.vixsrc",
+    version: "2.0.0",
+    name: "HelloView VixSrc",
+    description: "Riproduci l'intero catalogo appoggiandoti a VixSrc",
+    resources: ["stream"],
+    types: ["movie", "series"],
+    idPrefixes: ["tt"],
+    catalogs: []
 };
-
-async function tmdbRequest(requestPath, query = {}) {
-  if (!TMDB_ENABLED || typeof fetch !== 'function') {
-    return { ok: false, status: 0, error: 'tmdb_disabled' };
-  }
-
-  const params = new URLSearchParams();
-  Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && `${value}`.length > 0) {
-      params.set(key, `${value}`);
-    }
-  });
-
-  const headers = { Accept: 'application/json' };
-
-  if (TMDB_BEARER_TOKEN) {
-    headers.Authorization = `Bearer ${TMDB_BEARER_TOKEN}`;
-  } else if (TMDB_API_KEY) {
-    params.set('api_key', TMDB_API_KEY);
-  }
-
-  const qs = params.toString();
-  const url = `https://api.themoviedb.org/3${requestPath}${qs ? `?${qs}` : ''}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
-    const text = await response.text();
-    const data = text ? JSON.parse(text) : null;
-
-    if (!response.ok) {
-      return {
-        ok: false,
-        status: response.status,
-        error: (data && (data.status_message || data.message)) || `http_${response.status}`
-      };
-    }
-
-    return { ok: true, status: response.status, data };
-  } catch (error) {
-    if (error && error.name === 'AbortError') {
-      return { ok: false, status: 0, error: 'timeout' };
-    }
-    return { ok: false, status: 0, error: 'network_or_parse_error' };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function getTmdbIdByImdbId(imdbId, type) {
-  if (!imdbId) return null;
-
-  const result = await tmdbRequest(`/find/${encodeURIComponent(imdbId)}`, { external_source: 'imdb_id' });
-
-  if (!result.ok || !result.data) {
-    return null;
-  }
-
-  if (type === 'movie' && result.data.movie_results && result.data.movie_results.length > 0) {
-    return result.data.movie_results[0].id;
-  }
-  
-  if (type === 'series' && result.data.tv_results && result.data.tv_results.length > 0) {
-    return result.data.tv_results[0].id;
-  }
-
-  return null;
-}
 
 const builder = new addonBuilder(manifest);
 
-builder.defineStreamHandler(async (args) => {
-  // Stremio passa gli ID per le serie nel formato "tt1234567:stagione:episodio"
-  const [imdbId, season, episode] = args.id.split(':');
-  const type = args.type;
+builder.defineStreamHandler(async ({ type, id }) => {
+    // Estrae i dati dall'ID di Stremio (es. tt1234567:1:2 per le serie)
+    const [imdbId, season, episode] = id.split(":");
+    
+    // Converte IMDb ID -> TMDB ID
+    const tmdbId = await getTmdbId(imdbId);
 
-  console.log(`[stream] Richiesta type=${type} id=${args.id}`);
+    if (!tmdbId) {
+        return { streams: [] };
+    }
 
-  const tmdbId = await getTmdbIdByImdbId(imdbId, type);
-  
-  if (!tmdbId) {
-    console.log('[stream] TMDB ID non trovato, impossibile generare il link VixSrc');
+    let vixUrl = "";
+    
+    // Costruisce l'URL usando la documentazione API di VixSrc
+    if (type === "movie") {
+        vixUrl = `https://vixsrc.to/movie/${tmdbId}?lang=it`;
+    } else if (type === "series" && season && episode) {
+        vixUrl = `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}?lang=it`;
+    }
+
+    if (vixUrl) {
+        console.log(`Generato link VixSrc: ${vixUrl}`);
+        return {
+            streams: [
+                {
+                    title: `🎬 Guarda su VixSrc (${type === 'movie' ? 'Film' : 'Serie'})`,
+                    externalUrl: vixUrl
+                }
+            ]
+        };
+    }
+
     return { streams: [] };
-  }
-
-  let vixUrl = '';
-  if (type === 'movie') {
-    vixUrl = `https://vixsrc.to/movie/${tmdbId}?lang=it`;
-  } else if (type === 'series') {
-    vixUrl = `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}?lang=it`;
-  }
-
-  console.log(`[stream] Stream generato: ${vixUrl}`);
-
-  return {
-    streams: [
-      {
-        name: 'VixSrc',
-        title: `Guarda su VixSrc (${type})`,
-        externalUrl: vixUrl 
-      }
-    ]
-  };
 });
 
 serveHTTP(builder.getInterface(), { port: PORT });
-
-console.log(`[startup] VixSrc Addon avviato sulla porta ${PORT}`);
-console.log(`[startup] Manifest locale: http://localhost:${PORT}/manifest.json`);
-console.log(`[startup] TMDB abilitato: bearer=${TMDB_BEARER_TOKEN ? 'sì' : 'no'}, apiKey=${TMDB_API_KEY ? 'sì' : 'no'}`);
+console.log(`[Avvio] Addon VixSrc attivo su http://localhost:${PORT}/manifest.json`);
