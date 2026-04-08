@@ -7,38 +7,33 @@
       }
     ]
   },
-  "seriesStreams": {
-    "tt1748166:1:1": [
-      {
-        "title": "Demo episode stream",
-        "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-      }
-    ]
-  },
-  "movieMeta": {
+  "fallbackMovieMeta": {
     "tt1254207": {
       "id": "tt1254207",
       "type": "movie",
       "name": "Big Buck Bunny Demo",
-      "poster": "https://placehold.co/300x450/png?text=Big+Buck+Bunny",
-      "description": "Demo movie for addon testing."
-    }
-  },
-  "seriesMeta": {
-    "tt1748166": {
-      "id": "tt1748166",
-      "type": "series",
-      "name": "Demo Series",
-      "poster": "https://placehold.co/300x450/png?text=Demo+Series",
-      "description": "Demo series for addon testing.",
-      "videos": [
-        {
-          "id": "tt1748166:1:1",
-          "title": "Episode 1",
-          "season": 1,
-          "episode": 1
-        }
-      ]
+      "poster": "https://image.tmdb.org/t/p/w500/PLACEHOLDER.jpg",
+      "description": "Fallback demo movie.",
+      "releaseInfo": "2008",
+      "genres": ["Animation"]
+    },
+    "tt0111161": {
+      "id": "tt0111161",
+      "type": "movie",
+      "name": "The Shawshank Redemption",
+      "poster": "https://image.tmdb.org/t/p/w500/PLACEHOLDER.jpg",
+      "description": "Fallback metadata when TMDB is unavailable.",
+      "releaseInfo": "1994",
+      "genres": ["Drama"]
+    },
+    "tt0133093": {
+      "id": "tt0133093",
+      "type": "movie",
+      "name": "The Matrix",
+      "poster": "https://image.tmdb.org/t/p/w500/PLACEHOLDER.jpg",
+      "description": "Fallback metadata when TMDB is unavailable.",
+      "releaseInfo": "1999",
+      "genres": ["Action", "Science Fiction"]
     }
   }
 }
