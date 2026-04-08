@@ -14,7 +14,7 @@ const DEMO_IMDB_IDS = ['tt1254207', 'tt0111161', 'tt0133093'];
 
 const manifest = {
   id: 'com.eugenio.privateaddon',
-  version: '1.0.5',
+  version: '1.0.6',
   name: 'Eugenio Private Addon',
   description: 'Private Stremio addon for authorized streams',
   resources: ['stream', 'catalog', 'meta'],
@@ -213,6 +213,19 @@ function toFallbackMeta(meta) {
   };
 }
 
+function getFallbackCatalogMetas(fallbackMovieMeta = {}) {
+  const localFallback = toFallbackPreview(fallbackMovieMeta.tt1254207);
+  const guaranteedDemo = {
+    id: 'tt1254207',
+    type: 'movie',
+    name: 'Big Buck Bunny Demo',
+    poster: 'https://image.tmdb.org/t/p/w500/i9jJzvoXET4D9pOkoEwncSdNNER.jpg',
+    description: 'Fallback demo movie.'
+  };
+
+  return [localFallback || guaranteedDemo];
+}
+
 function sanitizeStreams(items) {
   if (!Array.isArray(items)) {
     return [];
@@ -252,14 +265,23 @@ const builder = new addonBuilder(manifest);
 
 builder.defineCatalogHandler(async ({ type, id }) => {
   console.log(`[catalog] request type=${type} id=${id}`);
+  console.log(`[catalog] expected type=movie id=${MOVIE_CATALOG_ID}`);
   const data = loadStreams();
 
-  if (type !== 'movie' || id !== MOVIE_CATALOG_ID) {
-    console.log('[catalog] response metas=0 (unsupported catalog)');
+  if (type !== 'movie') {
+    console.log('[catalog] response metas=0 (unsupported type)');
+    return { metas: [] };
+  }
+
+  if (id !== MOVIE_CATALOG_ID) {
+    console.log('[catalog] response metas=0 (unsupported catalog id)');
     return { metas: [] };
   }
 
   const metas = [];
+  let tmdbSuccessCount = 0;
+  let tmdbFailureCount = 0;
+
   for (const imdbId of DEMO_IMDB_IDS) {
     let meta = null;
     let fallbackUsed = false;
@@ -267,6 +289,11 @@ builder.defineCatalogHandler(async ({ type, id }) => {
     if (TMDB_ENABLED) {
       const tmdbMovie = await getMovieByImdbId(imdbId);
       meta = toMetaPreviewFromTmdb(imdbId, tmdbMovie);
+      if (meta) {
+        tmdbSuccessCount += 1;
+      } else {
+        tmdbFailureCount += 1;
+      }
     }
 
     if (!meta) {
@@ -281,8 +308,14 @@ builder.defineCatalogHandler(async ({ type, id }) => {
     }
   }
 
-  console.log(`[catalog] response metas=${metas.length}`);
-  return { metas };
+  console.log(`[catalog] TMDB lookup success=${tmdbSuccessCount} failure=${tmdbFailureCount}`);
+
+  const fallbackUsed = metas.length === 0;
+  const finalMetas = fallbackUsed ? getFallbackCatalogMetas(data.fallbackMovieMeta) : metas;
+
+  console.log(`[catalog] fallback used ${fallbackUsed ? 'yes' : 'no'}`);
+  console.log(`[catalog] response metas=${finalMetas.length}`);
+  return { metas: finalMetas };
 });
 
 builder.defineMetaHandler(async ({ type, id }) => {
