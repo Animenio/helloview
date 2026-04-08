@@ -2,29 +2,33 @@
   "movieStreams": {
     "tt1254207": [
       {
-        "title": "Big Buck Bunny - test MP4",
+        "title": "Big Buck Bunny - HTTPS HLS",
         "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
       }
     ]
   },
-  "fallbackMovieMeta": {
-    "tt1254207": {
-      "id": "tt1254207",
-      "type": "movie",
-      "name": "Big Buck Bunny Demo",
-      "description": "Fallback demo movie."
+  "authorizedIndex": [
+    {
+      "imdbId": "tt0111161",
+      "title": "The Shawshank Redemption",
+      "year": 1994,
+      "streams": [
+        {
+          "title": "Authorized stream",
+          "url": "https://example.com/authorized/shawshank.m3u8"
+        }
+      ]
     },
-    "tt0111161": {
-      "id": "tt0111161",
-      "type": "movie",
-      "name": "The Shawshank Redemption",
-      "description": "Fallback metadata."
-    },
-    "tt0133093": {
-      "id": "tt0133093",
-      "type": "movie",
-      "name": "The Matrix",
-      "description": "Fallback metadata."
+    {
+      "imdbId": "tt0133093",
+      "title": "The Matrix",
+      "year": 1999,
+      "streams": [
+        {
+          "title": "Authorized stream",
+          "url": "https://example.com/authorized/matrix.m3u8"
+        }
+      ]
     }
-  }
+  ]
 }
