@@ -10,7 +10,7 @@ const DEMO_SERIES_CATALOG_ID = 'authorized-demo-series';
 
 const manifest = {
   id: 'com.eugenio.privateaddon',
-  version: '1.0.1',
+  version: '1.0.2',
   name: 'Eugenio Private Addon',
   description: 'Private Stremio addon for authorized streams',
   resources: ['stream', 'catalog', 'meta'],
@@ -31,7 +31,7 @@ const manifest = {
 };
 
 function emptyData() {
-  return { movie: {}, series: {}, meta: { movie: {}, series: {} } };
+  return { movieStreams: {}, seriesStreams: {}, movieMeta: {}, seriesMeta: {} };
 }
 
 function loadStreams() {
@@ -45,19 +45,34 @@ function loadStreams() {
     const parsed = JSON.parse(raw);
 
     return {
-      movie: parsed && typeof parsed.movie === 'object' && parsed.movie !== null ? parsed.movie : {},
-      series: parsed && typeof parsed.series === 'object' && parsed.series !== null ? parsed.series : {},
-      meta: parsed && typeof parsed.meta === 'object' && parsed.meta !== null
-        ? {
-            movie: parsed.meta && typeof parsed.meta.movie === 'object' && parsed.meta.movie !== null ? parsed.meta.movie : {},
-            series: parsed.meta && typeof parsed.meta.series === 'object' && parsed.meta.series !== null ? parsed.meta.series : {}
-          }
-        : { movie: {}, series: {} }
+      movieStreams: parsed && typeof parsed.movieStreams === 'object' && parsed.movieStreams !== null ? parsed.movieStreams : {},
+      seriesStreams: parsed && typeof parsed.seriesStreams === 'object' && parsed.seriesStreams !== null ? parsed.seriesStreams : {},
+      movieMeta: parsed && typeof parsed.movieMeta === 'object' && parsed.movieMeta !== null ? parsed.movieMeta : {},
+      seriesMeta: parsed && typeof parsed.seriesMeta === 'object' && parsed.seriesMeta !== null ? parsed.seriesMeta : {}
     };
   } catch (error) {
     console.error(`[streams] Failed to load ${STREAMS_FILE}: ${error.message}`);
     return emptyData();
   }
+}
+
+function toMetaPreview(meta) {
+  if (!meta || typeof meta !== 'object') {
+    return null;
+  }
+
+  const preview = {
+    id: meta.id,
+    type: meta.type,
+    name: meta.name,
+    poster: meta.poster
+  };
+
+  if (typeof meta.description === 'string' && meta.description.trim().length > 0) {
+    preview.description = meta.description;
+  }
+
+  return preview;
 }
 
 function sanitizeStreams(items) {
@@ -95,59 +110,48 @@ function sanitizeStreams(items) {
   }, []);
 }
 
-function getMetaList(data, type) {
-  const source = type === 'movie' ? data.meta.movie : type === 'series' ? data.meta.series : null;
-  if (!source || typeof source !== 'object') {
-    return [];
-  }
-
-  return Object.values(source).filter((meta) => meta && typeof meta === 'object');
-}
-
 const builder = new addonBuilder(manifest);
 
 builder.defineCatalogHandler(async ({ type, id }) => {
-  console.log(`[catalog] request received type=${type} id=${id}`);
+  console.log(`[catalog] request type=${type} id=${id}`);
   const data = loadStreams();
 
   if (type === 'movie' && id === DEMO_MOVIE_CATALOG_ID) {
-    const metas = getMetaList(data, 'movie');
-    console.log(`[catalog] returning movie demo metas=${metas.length}`);
+    const metas = Object.values(data.movieMeta)
+      .map(toMetaPreview)
+      .filter(Boolean);
+    console.log(`[catalog] response metas=${metas.length}`);
     return { metas };
   }
 
   if (type === 'series' && id === DEMO_SERIES_CATALOG_ID) {
-    const metas = getMetaList(data, 'series');
-    console.log(`[catalog] returning series demo metas=${metas.length}`);
+    const metas = Object.values(data.seriesMeta)
+      .map(toMetaPreview)
+      .filter(Boolean);
+    console.log(`[catalog] response metas=${metas.length}`);
     return { metas };
   }
 
-  console.log('[catalog] unsupported catalog requested, returning empty metas');
+  console.log('[catalog] response metas=0 (unsupported catalog)');
   return { metas: [] };
 });
 
 builder.defineMetaHandler(async ({ type, id }) => {
-  console.log(`[meta] request received type=${type} id=${id}`);
+  console.log(`[meta] request type=${type} id=${id}`);
   const data = loadStreams();
-  const source = type === 'movie' ? data.meta.movie : type === 'series' ? data.meta.series : null;
+  const source = type === 'movie' ? data.movieMeta : type === 'series' ? data.seriesMeta : null;
   const meta = source && source[id] ? source[id] : null;
 
-  if (meta) {
-    console.log('[meta] meta found, returning payload');
-    return { meta };
-  }
-
-  console.log('[meta] no meta found, returning null');
-  return { meta: null };
+  return { meta };
 });
 
 builder.defineStreamHandler(async ({ type, id }) => {
-  console.log(`[stream] request received type=${type} id=${id}`);
+  console.log(`[stream] request type=${type} id=${id}`);
   const data = loadStreams();
-  const source = type === 'movie' ? data.movie : type === 'series' ? data.series : null;
+  const source = type === 'movie' ? data.movieStreams : type === 'series' ? data.seriesStreams : null;
 
   if (!source || !source[id]) {
-    console.log('[stream] no matching entry found, returning streams=0');
+    console.log('[stream] response streams=0');
     return { streams: [] };
   }
 
@@ -155,7 +159,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
   const items = Array.isArray(entry) ? entry : [entry];
   const streams = sanitizeStreams(items);
 
-  console.log(`[stream] streams found=${streams.length}`);
+  console.log(`[stream] response streams=${streams.length}`);
   return { streams };
 });
 
