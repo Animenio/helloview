@@ -9,7 +9,7 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BEARER_TOKEN = process.env.TMDB_BEARER_TOKEN;
 const TMDB_ENABLED = Boolean(TMDB_BEARER_TOKEN || TMDB_API_KEY);
 
-const MOVIE_CATALOG_ID = 'top';
+const MOVIE_CATALOG_ID = 'eugenio_top';
 const DEMO_IMDB_IDS = ['tt1254207', 'tt0111161', 'tt0133093'];
 
 const manifest = {
@@ -55,7 +55,7 @@ function loadStreams() {
 
 function buildPosterUrl(posterPath) {
   if (typeof posterPath !== 'string' || posterPath.trim().length === 0) {
-    return null;
+    return undefined;
   }
   return `https://image.tmdb.org/t/p/w500${posterPath}`;
 }
@@ -191,7 +191,7 @@ function toFallbackPreview(meta) {
     id: meta.id,
     type: 'movie',
     name: meta.name,
-    poster: meta.poster,
+    poster: meta.poster || undefined,
     description: meta.description,
     releaseInfo: meta.releaseInfo
   };
@@ -206,7 +206,7 @@ function toFallbackMeta(meta) {
     id: meta.id,
     type: 'movie',
     name: meta.name,
-    poster: meta.poster,
+    poster: meta.poster || undefined,
     description: meta.description,
     releaseInfo: meta.releaseInfo,
     genres: Array.isArray(meta.genres) ? meta.genres : []

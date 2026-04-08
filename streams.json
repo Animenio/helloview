@@ -3,7 +3,7 @@
     "tt1254207": [
       {
         "title": "Big Buck Bunny - test MP4",
-        "url": "http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4"
+        "url": "https://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4"
       }
     ]
   },
@@ -12,21 +12,18 @@
       "id": "tt1254207",
       "type": "movie",
       "name": "Big Buck Bunny Demo",
-      "poster": null,
       "description": "Fallback demo movie."
     },
     "tt0111161": {
       "id": "tt0111161",
       "type": "movie",
       "name": "The Shawshank Redemption",
-      "poster": null,
       "description": "Fallback metadata."
     },
     "tt0133093": {
       "id": "tt0133093",
       "type": "movie",
       "name": "The Matrix",
-      "poster": null,
       "description": "Fallback metadata."
     }
   }

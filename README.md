@@ -21,7 +21,7 @@ The file uses two top-level objects:
 
 ## Demo catalog
 The addon provides one internal demo catalog:
-- `top`
+- `eugenio_top`
 
 Default IMDb IDs used for TMDB lookup:
 - `tt1254207`
