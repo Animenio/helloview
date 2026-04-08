@@ -1,0 +1,14 @@
+{
+  "movie": {
+    "tt1254207": {
+      "title": "[TEST] Authorized Movie Stream",
+      "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+    }
+  },
+  "series": {
+    "tt1748166:1:1": {
+      "title": "[TEST] Replace with your authorized episode stream",
+      "url": "https://example.com/path/to/episode-1.m3u8"
+    }
+  }
+}

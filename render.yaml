@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: eugenio-private-stremio-addon
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
