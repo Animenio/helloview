@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 7000;
-const STREAMS_FILE = path.join(__dirname, 'streams.json');
+const STREAMS_DIR = __dirname;
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BEARER_TOKEN = process.env.TMDB_BEARER_TOKEN;
@@ -24,29 +24,83 @@ function emptyData() {
   return { movieStreams: {}, authorizedIndex: [] };
 }
 
+function getStreamPartFiles() {
+  try {
+    return fs
+      .readdirSync(STREAMS_DIR)
+      .filter((name) => /^streams_part_\d+\.json$/.test(name))
+      .sort((a, b) => {
+        const aPart = Number((a.match(/^streams_part_(\d+)\.json$/) || [])[1] || 0);
+        const bPart = Number((b.match(/^streams_part_(\d+)\.json$/) || [])[1] || 0);
+        return aPart - bPart;
+      })
+      .map((name) => path.join(STREAMS_DIR, name));
+  } catch (error) {
+    console.error(`[streams] Failed to read directory ${STREAMS_DIR}: ${error.message}`);
+    return [];
+  }
+}
+
+function mergeStreamData(parts) {
+  const merged = emptyData();
+
+  if (!Array.isArray(parts)) {
+    return merged;
+  }
+
+  parts.forEach((part) => {
+    if (!part || typeof part !== 'object') {
+      return;
+    }
+
+    if (part.movieStreams && typeof part.movieStreams === 'object' && !Array.isArray(part.movieStreams)) {
+      Object.entries(part.movieStreams).forEach(([imdbId, streams]) => {
+        if (!Array.isArray(streams)) {
+          return;
+        }
+
+        if (!Array.isArray(merged.movieStreams[imdbId])) {
+          merged.movieStreams[imdbId] = [];
+        }
+
+        merged.movieStreams[imdbId].push(...streams);
+      });
+    }
+
+    if (Array.isArray(part.authorizedIndex)) {
+      merged.authorizedIndex.push(...part.authorizedIndex);
+    }
+  });
+
+  return merged;
+}
+
 function loadStreams() {
   try {
-    if (!fs.existsSync(STREAMS_FILE)) {
-      console.warn(`[streams] File not found: ${STREAMS_FILE}. Using safe fallback.`);
+    const streamPartFiles = getStreamPartFiles();
+
+    if (streamPartFiles.length === 0) {
+      console.warn(
+        `[streams] No stream part files found in ${STREAMS_DIR}. Using safe fallback.`
+      );
       return emptyData();
     }
 
-    const raw = fs.readFileSync(STREAMS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
+    const parts = streamPartFiles.reduce((acc, streamFile) => {
+      try {
+        const raw = fs.readFileSync(streamFile, 'utf8');
+        const parsed = JSON.parse(raw);
+        acc.push(parsed);
+      } catch (error) {
+        console.error(`[streams] Failed to load ${streamFile}: ${error.message}`);
+      }
 
-    const movieStreams =
-      parsed && typeof parsed.movieStreams === 'object' && parsed.movieStreams !== null
-        ? parsed.movieStreams
-        : {};
+      return acc;
+    }, []);
 
-    const authorizedIndex =
-      parsed && Array.isArray(parsed.authorizedIndex)
-        ? parsed.authorizedIndex
-        : [];
-
-    return { movieStreams, authorizedIndex };
+    return mergeStreamData(parts);
   } catch (error) {
-    console.error(`[streams] Failed to load ${STREAMS_FILE}: ${error.message}`);
+    console.error(`[streams] Failed to load stream parts: ${error.message}`);
     return emptyData();
   }
 }
@@ -276,7 +330,7 @@ serveHTTP(builder.getInterface(), { port: PORT });
 
 console.log(`[startup] Eugenio Private Addon started on port ${PORT}`);
 console.log(`[startup] Local manifest URL: http://localhost:${PORT}/manifest.json`);
-console.log(`[startup] Streams source file: ${STREAMS_FILE}`);
+console.log(`[startup] Streams source directory: ${STREAMS_DIR}`);
 console.log(
   `[startup] TMDB metadata enabled: bearer=${TMDB_BEARER_TOKEN ? 'yes' : 'no'}, apiKey=${TMDB_API_KEY ? 'yes' : 'no'}`
 );
