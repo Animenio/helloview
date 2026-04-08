@@ -1,14 +1,46 @@
 {
   "movie": {
-    "tt1254207": {
-      "title": "[TEST] Authorized Movie Stream",
-      "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
-    }
+    "tt1254207": [
+      {
+        "title": "Big Buck Bunny - test MP4",
+        "url": "http://clips.vorwaerts-gmbh.de/big_buck_bunny.mp4"
+      }
+    ]
   },
   "series": {
-    "tt1748166:1:1": {
-      "title": "[TEST] Replace with your authorized episode stream",
-      "url": "https://example.com/path/to/episode-1.m3u8"
+    "tt1748166:1:1": [
+      {
+        "title": "Demo episode stream",
+        "url": "https://example.com/path/to/episode-1.m3u8"
+      }
+    ]
+  },
+  "meta": {
+    "movie": {
+      "tt1254207": {
+        "id": "tt1254207",
+        "type": "movie",
+        "name": "Big Buck Bunny Demo",
+        "poster": "https://via.placeholder.com/300x450?text=Big+Buck+Bunny",
+        "description": "Demo movie used to test the private addon with an authorized/public test stream."
+      }
+    },
+    "series": {
+      "tt1748166:1:1": {
+        "id": "tt1748166:1:1",
+        "type": "series",
+        "name": "Demo Series Episode",
+        "poster": "https://via.placeholder.com/300x450?text=Demo+Series",
+        "description": "Demo series episode used to test the private addon.",
+        "videos": [
+          {
+            "id": "tt1748166:1:1",
+            "title": "Episode 1",
+            "season": 1,
+            "episode": 1
+          }
+        ]
+      }
     }
   }
 }
