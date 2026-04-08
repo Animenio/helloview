@@ -11,7 +11,7 @@ const TMDB_ENABLED = Boolean(TMDB_BEARER_TOKEN || TMDB_API_KEY);
 
 const manifest = {
   id: 'com.eugenio.privateaddon',
-  version: '1.1.1',
+  version: '1.2.0',
   name: 'Eugenio Private Addon',
   description: 'Private Stremio addon for authorized streams',
   resources: ['stream'],

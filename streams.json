@@ -18,17 +18,6 @@
           "url": "https://example.com/authorized/shawshank.m3u8"
         }
       ]
-    },
-    {
-      "imdbId": "tt0133093",
-      "title": "The Matrix",
-      "year": 1999,
-      "streams": [
-        {
-          "title": "Authorized stream",
-          "url": "https://example.com/authorized/matrix.m3u8"
-        }
-      ]
     }
   ]
 }

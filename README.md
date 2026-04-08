@@ -25,7 +25,7 @@ Il manifest è semplificato e supporta:
 - `resources: ["stream"]`
 - `types: ["movie"]`
 - `idPrefixes: ["tt"]`
-- `version: "1.1.1"`
+- `version: "1.2.0"`
 
 ## Struttura `streams.json`
 ```json
@@ -92,3 +92,8 @@ Manifest locale:
 
 Manifest deploy:
 - `https://<service-name>.onrender.com/manifest.json`
+
+
+## Nota catalogo
+Questo addon **non costruisce un catalogo globale proprio**: usa direttamente il search/catalog già presenti in Stremio.
+Il playback compare solo quando esiste uno stream autorizzato nel tuo `streams.json`; in caso contrario ritorna `streams: []`.
