@@ -1,100 +1,99 @@
 # Eugenio Private Addon
 
-## Overview
-This is a minimal private Stremio addon (Node.js + CommonJS + `stremio-addon-sdk`) for **authorized streams only**.
+Addon Stremio minimale che funziona come **stream provider per film aperti/cercati in Stremio**.
 
-The addon keeps stream mappings in `streams.json` and exposes:
-- `stream` resource
-- `catalog` resource (movie demo catalog)
-- `meta` resource
+## Flusso principale (search/open -> stream)
+1. L’utente cerca un film in Stremio e apre la scheda (es. `Eternity`).
+2. Stremio invia una richiesta `stream` al tuo addon con `args.id` = IMDb ID (es. `tt0111161`).
+3. L’addon prova prima il lookup diretto in `streams.json.movieStreams[imdbId]`.
+4. Se non trova nulla, prova una risoluzione secondaria:
+   - recupera metadata movie da TMDB (solo metadata)
+   - estrae `title`, `originalTitle`, `year`
+   - chiama resolver locale `findAuthorizedMovieStream(...)` su `authorizedIndex`
+5. Se trova match autorizzato ritorna `streams: [...]`; altrimenti ritorna `streams: []`.
 
-TMDB is used **only** for movie catalog and metadata enrichment.
-Streams remain static and separate in `streams.json`.
+## Vincoli rispettati
+- Solo sorgenti autorizzate/locali controllate dall’utente.
+- Nessuno scraping di siti terzi.
+- Nessuna integrazione con VixSrc o siti non autorizzati.
+- Nessun frontend aggiuntivo.
+- Nessun database complesso.
+- Nessun uso di Express.
 
-## Data model in `streams.json`
-The file uses two top-level objects:
-- `movieStreams`
-- `fallbackMovieMeta`
+## Manifest
+Il manifest è semplificato e supporta:
+- `resources: ["stream"]`
+- `types: ["movie"]`
+- `idPrefixes: ["tt"]`
+- `version: "1.2.0"`
 
-### Critical ID rule
-- **Movies:** same ID for meta and stream (example: `tt1254207`).
+## Struttura `streams.json`
+```json
+{
+  "movieStreams": {
+    "tt1254207": [
+      {
+        "title": "Big Buck Bunny - HTTPS HLS",
+        "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+      }
+    ]
+  },
+  "authorizedIndex": [
+    {
+      "imdbId": "tt0111161",
+      "title": "The Shawshank Redemption",
+      "year": 1994,
+      "streams": [
+        {
+          "title": "Authorized stream",
+          "url": "https://example.com/authorized/shawshank.m3u8"
+        }
+      ]
+    }
+  ]
+}
+```
 
-## Demo catalog
-The addon provides one internal demo catalog:
-- `eugenio_top`
+## Matching logic
+Priorità del resolver locale:
+1. `imdbId` esatto
+2. `title` normalizzato + `year`
+3. `originalTitle` normalizzato + `year`
 
-Default IMDb IDs used for TMDB lookup:
-- `tt1254207`
-- `tt0111161`
-- `tt0133093`
+## Logging (senza segreti)
+Per ogni richiesta stream vengono loggati:
+- `stream request imdbId`
+- `direct lookup hit yes/no`
+- `metadata lookup success/failure`
+- `authorized match found yes/no`
+- `streams returned count`
 
-Catalog responses return preview metas (`id`, `type`, `name`, `poster`, optional `description`, optional `releaseInfo`).
-`meta` responses return full movie metadata including `genres`.
+## TMDB
+TMDB è opzionale e usato **solo per metadata** durante la risoluzione secondaria.
+Variabili supportate:
+- `TMDB_BEARER_TOKEN` (preferito)
+- `TMDB_API_KEY` (fallback)
 
-## TMDB configuration
-Render provides TMDB credentials via environment variables:
-- `TMDB_BEARER_TOKEN` (preferred at runtime)
-- `TMDB_API_KEY` (used only as fallback if bearer token is missing)
+## Avvio locale
+```bash
+npm install
+npm start
+```
+Manifest locale:
+- `http://localhost:7000/manifest.json`
 
-Rules:
-- Do **not** commit TMDB keys/tokens in the repository.
-- Do **not** print TMDB keys/tokens in logs.
-- TMDB is used only for catalog/meta, not for stream playback.
+## Deploy Render
+1. Push su GitHub.
+2. Crea Web Service su Render.
+3. Build command: `npm install`
+4. Start command: `npm start`
+5. (Opzionale) imposta `TMDB_BEARER_TOKEN` / `TMDB_API_KEY`.
+6. Re-deploy/restart per applicare env vars.
 
-If TMDB is missing or temporarily failing, the addon falls back to local `fallbackMovieMeta` from `streams.json`.
+Manifest deploy:
+- `https://<service-name>.onrender.com/manifest.json`
 
-Attribution note:
-- This product uses the TMDB API but is not endorsed or certified by TMDB.
 
-Credit note:
-- If you use TMDB data or images, include TMDB logo/credits in your About/Credits section.
-
-## Local run
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-2. Start the addon:
-   ```bash
-   npm start
-   ```
-3. Manifest URL:
-   - `http://localhost:7000/manifest.json`
-
-Useful logs include:
-- TMDB enabled `bearer=yes/no, apiKey=yes/no`
-- catalog request `type/id`
-- TMDB lookup success/failure per IMDb ID
-- meta request `type/id`
-- stream request `type/id`
-
-## Deploy on Render
-1. Push the repository to GitHub.
-2. Create a new Web Service on Render from the repository.
-3. Render uses:
-   - Build command: `npm install`
-   - Start command: `npm start`
-4. Add env vars in Render:
-   - `TMDB_BEARER_TOKEN` (recommended)
-   - optionally `TMDB_API_KEY`
-5. Deployed manifest URL:
-   - `https://<service-name>.onrender.com/manifest.json`
-
-## TMDB troubleshooting
-- If `TMDB_BEARER_TOKEN` / `TMDB_API_KEY` are not active in your Render deploy, the addon still serves catalog/meta using local `fallbackMovieMeta`.
-- The catalog should **not** disappear when TMDB fails (timeout, auth, endpoint, rate limit): fallback metadata keeps the addon visible in Stremio.
-- After adding or changing env vars in Render, trigger a new deploy/restart of the service so runtime picks up the new values.
-- TMDB is used **only** for metadata (catalog/meta), never for stream playback.
-
-## Install in Stremio
-1. Copy your manifest URL.
-2. Open Stremio → Addons.
-3. Choose **Install via URL**.
-4. Paste the manifest URL and install.
-5. Open demo movie catalog and test items.
-
-## Limitations
-- Only for streams you control and are authorized to use.
-- No scraping.
-- No database.
-- No TV series handling in this phase.
+## Nota catalogo
+Questo addon **non costruisce un catalogo globale proprio**: usa direttamente il search/catalog già presenti in Stremio.
+Il playback compare solo quando esiste uno stream autorizzato nel tuo `streams.json`; in caso contrario ritorna `streams: []`.
