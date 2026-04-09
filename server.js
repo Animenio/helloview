@@ -11,11 +11,11 @@ const TMDB_ENABLED = Boolean(TMDB_BEARER_TOKEN || TMDB_API_KEY);
 
 const manifest = {
   id: 'com.eugenio.privateaddon',
-  version: '1.2.0',
+  version: '1.2.1',
   name: 'Eugenio Private Addon',
   description: 'Private Stremio addon for authorized streams',
   resources: ['stream'],
-  types: ['movie', 'series'],
+  types: ['movie'],
   idPrefixes: ['tt'],
   catalogs: []
 };
@@ -28,10 +28,10 @@ function getStreamPartFiles() {
   try {
     return fs
       .readdirSync(STREAMS_DIR)
-      .filter((name) => /^streams_part_\d+\.json$/.test(name))
+      .filter((name) => /^streams_part_\d{2}\.json$/.test(name))
       .sort((a, b) => {
-        const aPart = Number((a.match(/^streams_part_(\d+)\.json$/) || [])[1] || 0);
-        const bPart = Number((b.match(/^streams_part_(\d+)\.json$/) || [])[1] || 0);
+        const aPart = Number((a.match(/^streams_part_(\d{2})\.json$/) || [])[1] || 0);
+        const bPart = Number((b.match(/^streams_part_(\d{2})\.json$/) || [])[1] || 0);
         return aPart - bPart;
       })
       .map((name) => path.join(STREAMS_DIR, name));
@@ -70,9 +70,19 @@ function loadStreams() {
     const streamPartFiles = getStreamPartFiles();
 
     if (streamPartFiles.length === 0) {
-      console.warn(
-        `[streams] No stream part files found in ${STREAMS_DIR}. Using safe fallback.`
-      );
+      const fallbackPath = path.join(STREAMS_DIR, 'streams.json');
+      if (fs.existsSync(fallbackPath)) {
+        try {
+          const raw = fs.readFileSync(fallbackPath, 'utf8');
+          const parsed = JSON.parse(raw);
+          console.warn('[streams] No streams_part_*.json found. Using fallback streams.json');
+          return mergeStreamData([parsed]);
+        } catch (error) {
+          console.error(`[streams] Failed to load fallback streams.json: ${error.message}`);
+        }
+      }
+
+      console.warn(`[streams] No stream part files found in ${STREAMS_DIR}. Using safe fallback.`);
       return emptyData();
     }
 
@@ -194,27 +204,40 @@ function sanitizeStreams(items) {
     return [];
   }
 
+  const directMediaExtPattern = /\.(m3u8|mp4|webm|mov|mkv)(\?|#|$)/i;
+  const nonDirectPattern = /(\/watch\b|\/embed\b|\/player\b|\.html?(\?|#|$))/i;
+
   return items.reduce((acc, item) => {
     if (!item || typeof item !== 'object') {
       return acc;
     }
 
-    const hasValidTitle = typeof item.title === 'string' && item.title.trim().length > 0;
-    const hasValidUrl = typeof item.url === 'string' && /^https?:\/\//i.test(item.url);
-    const hasValidExternalUrl =
-      typeof item.externalUrl === 'string' && /^https?:\/\//i.test(item.externalUrl);
+    const title = typeof item.title === 'string' ? item.title.trim() : '';
+    const url = typeof item.url === 'string' ? item.url.trim() : '';
+    const hasExternalUrl = typeof item.externalUrl === 'string' && item.externalUrl.trim().length > 0;
 
-    if (!hasValidTitle || (!hasValidUrl && !hasValidExternalUrl)) {
+    if (!title) {
       return acc;
     }
 
-    const stream = { title: item.title.trim() };
-
-    if (hasValidUrl) {
-      stream.url = item.url;
-    } else {
-      stream.externalUrl = item.externalUrl;
+    if (!url) {
+      if (hasExternalUrl) {
+        console.warn(`[sanitize] drop reason=externalUrl_not_allowed title="${title}"`);
+      }
+      return acc;
     }
+
+    if (!/^https?:\/\//i.test(url)) {
+      console.warn(`[sanitize] drop reason=invalid_url title="${title}" url="${url}"`);
+      return acc;
+    }
+
+    if (nonDirectPattern.test(url) || !directMediaExtPattern.test(url)) {
+      console.warn(`[sanitize] drop reason=non_direct_media_url title="${title}" url="${url}"`);
+      return acc;
+    }
+
+    const stream = { title, url };
 
     if (
       item.behaviorHints &&
@@ -250,7 +273,8 @@ function findAuthorizedMovieStream({ imdbId, title, originalTitle, year }, autho
       }
 
       const entryTitle = normalizeTitle(entry.title);
-      return entryTitle && entryTitle === normalizedTitle && entry.year === targetYear;
+      const entryYear = Number.isInteger(entry.year) ? entry.year : Number(entry.year);
+      return entryTitle && entryTitle === normalizedTitle && entryYear === targetYear;
     });
 
     if (byTitleYear) {
@@ -263,7 +287,8 @@ function findAuthorizedMovieStream({ imdbId, title, originalTitle, year }, autho
       }
 
       const entryTitle = normalizeTitle(entry.title);
-      return entryTitle && entryTitle === normalizedOriginalTitle && entry.year === targetYear;
+      const entryYear = Number.isInteger(entry.year) ? entry.year : Number(entry.year);
+      return entryTitle && entryTitle === normalizedOriginalTitle && entryYear === targetYear;
     });
 
     if (byOriginalTitleYear) {
@@ -283,7 +308,7 @@ console.log(
 );
 
 builder.defineStreamHandler(async (args) => {
-  const imdbId = args ? args.id : null;
+  const imdbId = args && typeof args.id === 'string' ? args.id.trim() : '';
   console.log(`[stream] request imdbId=${imdbId || 'n/a'}`);
 
   if (!imdbId) {
@@ -300,24 +325,33 @@ builder.defineStreamHandler(async (args) => {
 
   console.log(`[stream] direct lookup hit=${directStreams.length > 0 ? 'yes' : 'no'}`);
 
-  if (directStreams.length > 0) {
-    console.log('[stream] metadata lookup success=skipped');
-    console.log('[stream] authorized match found=yes (direct)');
-    console.log(`[stream] streams returned count=${directStreams.length}`);
-    return { streams: directStreams };
+    console.log(`[stream] direct lookup hit=${directStreams.length > 0 ? 'yes' : 'no'}`);
+
+    if (directStreams.length > 0) {
+      console.log('[stream] metadata lookup success=no');
+      console.log('[stream] authorized match found=yes');
+      console.log(`[stream] streams returned count=${directStreams.length}`);
+      return { streams: directStreams };
+    }
+
+    const metadata = await getMovieMetadataByImdbId(imdbId);
+    console.log(`[stream] metadata lookup success=${metadata ? 'yes' : 'no'}`);
+
+    const resolvedStreams = metadata
+      ? findAuthorizedMovieStream(metadata, data.authorizedIndex)
+      : [];
+
+    console.log(`[stream] authorized match found=${resolvedStreams.length > 0 ? 'yes' : 'no'}`);
+    console.log(`[stream] streams returned count=${resolvedStreams.length}`);
+    return { streams: resolvedStreams };
+  } catch (error) {
+    console.error(`[stream] handler error imdbId=${imdbId}: ${error.message}`);
+    console.log('[stream] direct lookup hit=no');
+    console.log('[stream] metadata lookup success=no');
+    console.log('[stream] authorized match found=no');
+    console.log('[stream] streams returned count=0');
+    return { streams: [] };
   }
-
-  const metadata = await getMovieMetadataByImdbId(imdbId);
-  console.log(`[stream] metadata lookup success=${metadata ? 'yes' : 'no'}`);
-
-  const resolvedStreams = metadata
-    ? findAuthorizedMovieStream(metadata, data.authorizedIndex)
-    : [];
-
-  console.log(`[stream] authorized match found=${resolvedStreams.length > 0 ? 'yes' : 'no'}`);
-  console.log(`[stream] streams returned count=${resolvedStreams.length}`);
-
-  return { streams: resolvedStreams };
 });
 
 serveHTTP(builder.getInterface(), { port: PORT });

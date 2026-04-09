@@ -2,15 +2,18 @@
 
 Addon Stremio minimale che funziona come **stream provider per film aperti/cercati in Stremio**.
 
-## Flusso principale (search/open -> stream)
-1. L’utente cerca un film in Stremio e apre la scheda (es. `Eternity`).
-2. Stremio invia una richiesta `stream` al tuo addon con `args.id` = IMDb ID (es. `tt0111161`).
-3. L’addon prova prima il lookup diretto in `streams.json.movieStreams[imdbId]`.
-4. Se non trova nulla, prova una risoluzione secondaria:
-   - recupera metadata movie da TMDB (solo metadata)
-   - estrae `title`, `originalTitle`, `year`
-   - chiama resolver locale `findAuthorizedMovieStream(...)` su `authorizedIndex`
-5. Se trova match autorizzato ritorna `streams: [...]`; altrimenti ritorna `streams: []`.
+## Flusso completo (search/open -> stream)
+1. L’utente apre un film in Stremio e il client invia una richiesta `stream` con `args.id` (IMDb, es. `tt0111161`).
+2. Il server legge i file split `streams_part_*.json` dalla root della repo deployata.
+3. I file validi vengono uniti in una singola struttura:
+   - merge di tutte le chiavi in `movieStreams`
+   - concat di tutti i record in `authorizedIndex`
+4. Dopo il merge viene fatta deduplica robusta:
+   - `movieStreams[imdbId]` dedup per `title + url`
+   - `authorizedIndex` dedup per priorità `imdbId`, altrimenti `title normalizzato + year`
+5. Lo stream handler prova prima il lookup diretto in `movieStreams[imdbId]`.
+6. Se non trova stream validi, prova fallback metadata TMDB (solo metadata) e matching su `authorizedIndex`.
+7. In ogni caso il risultato finale è sempre `{ streams: [...] }` oppure `{ streams: [] }` senza crash.
 
 ## Vincoli rispettati
 - Solo sorgenti autorizzate/locali controllate dall’utente.
@@ -21,13 +24,23 @@ Addon Stremio minimale che funziona come **stream provider per film aperti/cerca
 - Nessun uso di Express.
 
 ## Manifest
-Il manifest è semplificato e supporta:
+Il manifest è stream-first e supporta:
 - `resources: ["stream"]`
 - `types: ["movie"]`
 - `idPrefixes: ["tt"]`
-- `version: "1.2.0"`
+- `catalogs: []`
+- `version: "1.2.1"`
 
-## Struttura `streams.json`
+## Caricamento split files
+- Il loader cerca **solo** file che matchano esattamente `streams_part_XX.json` (due cifre).
+- I file sono ordinati in modo numerico (`01`, `02`, ..., `20`).
+- Se un file è malformato, viene loggato e ignorato, ma il caricamento continua.
+- `streams.json` è ignorato di default e usato solo come fallback opzionale se mancano totalmente i file split.
+- Se non esiste nessuna sorgente valida, il server usa fallback sicuro:
+  - `{ "movieStreams": {}, "authorizedIndex": [] }`
+
+## Formato richiesto per ogni file parte
+Ogni file parte deve avere la forma seguente:
 ```json
 {
   "movieStreams": {
@@ -54,19 +67,40 @@ Il manifest è semplificato e supporta:
 }
 ```
 
-## Matching logic
-Priorità del resolver locale:
+## Differenza tra le sezioni dati
+- `movieStreams`: lookup diretto `IMDb ID -> streams`.
+- `authorizedIndex`: fallback tramite metadata (`title/originalTitle/year`) -> `streams`.
+
+## Matching logic su `authorizedIndex`
+Priorità del resolver:
 1. `imdbId` esatto
 2. `title` normalizzato + `year`
 3. `originalTitle` normalizzato + `year`
+
+La normalizzazione rende il matching robusto a:
+- accenti
+- punteggiatura
+- maiuscole/minuscole
+- spazi multipli
+
+## Requirement per playback interno Stremio
+Per garantire playback interno:
+- usare sempre `url` (HTTP/HTTPS), **mai** `externalUrl`
+- usare URL diretti media (`.m3u8`, `.mp4`, `.webm`, `.mov`, `.mkv`)
+- URL tipo pagine/player (`/watch`, `/embed`, `/player`, `.html`) vengono scartati come non idonei
 
 ## Logging (senza segreti)
 Per ogni richiesta stream vengono loggati:
 - `stream request imdbId`
 - `direct lookup hit yes/no`
-- `metadata lookup success/failure`
+- `metadata lookup success yes/no`
 - `authorized match found yes/no`
 - `streams returned count`
+
+Per la sanitizzazione stream vengono loggati anche i motivi di scarto:
+- `invalid_url`
+- `externalUrl_not_allowed`
+- `non_direct_media_url`
 
 ## TMDB
 TMDB è opzionale e usato **solo per metadata** durante la risoluzione secondaria.
@@ -93,7 +127,10 @@ Manifest locale:
 Manifest deploy:
 - `https://<service-name>.onrender.com/manifest.json`
 
+## Nota Render e filesystem
+I file JSON split vengono letti direttamente dal filesystem della repo deployata (`__dirname`).
+Quindi su Render i `streams_part_*.json` devono essere presenti nel deploy.
 
 ## Nota catalogo
 Questo addon **non costruisce un catalogo globale proprio**: usa direttamente il search/catalog già presenti in Stremio.
-Il playback compare solo quando esiste uno stream autorizzato nel tuo `streams.json`; in caso contrario ritorna `streams: []`.
+Il playback compare solo quando esiste uno stream valido nei `streams_part_*.json` (o fallback `streams.json`); in caso contrario ritorna `streams: []`.
