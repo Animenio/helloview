@@ -41,38 +41,28 @@ function getStreamPartFiles() {
   }
 }
 
-function mergeStreamData(parts) {
-  const merged = emptyData();
-
-  if (!Array.isArray(parts)) {
-    return merged;
+function mergeStreamDataPart(target, part) {
+  if (!target || typeof target !== 'object' || !part || typeof part !== 'object') {
+    return;
   }
 
-  parts.forEach((part) => {
-    if (!part || typeof part !== 'object') {
-      return;
-    }
+  if (part.movieStreams && typeof part.movieStreams === 'object' && !Array.isArray(part.movieStreams)) {
+    Object.entries(part.movieStreams).forEach(([imdbId, streams]) => {
+      if (!Array.isArray(streams)) {
+        return;
+      }
 
-    if (part.movieStreams && typeof part.movieStreams === 'object' && !Array.isArray(part.movieStreams)) {
-      Object.entries(part.movieStreams).forEach(([imdbId, streams]) => {
-        if (!Array.isArray(streams)) {
-          return;
-        }
+      if (!Array.isArray(target.movieStreams[imdbId])) {
+        target.movieStreams[imdbId] = [];
+      }
 
-        if (!Array.isArray(merged.movieStreams[imdbId])) {
-          merged.movieStreams[imdbId] = [];
-        }
+      target.movieStreams[imdbId].push(...streams);
+    });
+  }
 
-        merged.movieStreams[imdbId].push(...streams);
-      });
-    }
-
-    if (Array.isArray(part.authorizedIndex)) {
-      merged.authorizedIndex.push(...part.authorizedIndex);
-    }
-  });
-
-  return merged;
+  if (Array.isArray(part.authorizedIndex)) {
+    target.authorizedIndex.push(...part.authorizedIndex);
+  }
 }
 
 function loadStreams() {
@@ -86,19 +76,19 @@ function loadStreams() {
       return emptyData();
     }
 
-    const parts = streamPartFiles.reduce((acc, streamFile) => {
+    const merged = emptyData();
+
+    streamPartFiles.forEach((streamFile) => {
       try {
         const raw = fs.readFileSync(streamFile, 'utf8');
         const parsed = JSON.parse(raw);
-        acc.push(parsed);
+        mergeStreamDataPart(merged, parsed);
       } catch (error) {
         console.error(`[streams] Failed to load ${streamFile}: ${error.message}`);
       }
+    });
 
-      return acc;
-    }, []);
-
-    return mergeStreamData(parts);
+    return merged;
   } catch (error) {
     console.error(`[streams] Failed to load stream parts: ${error.message}`);
     return emptyData();
@@ -287,6 +277,10 @@ function findAuthorizedMovieStream({ imdbId, title, originalTitle, year }, autho
 }
 
 const builder = new addonBuilder(manifest);
+const streamsDataCache = loadStreams();
+console.log(
+  `[startup] Streams loaded: movieIds=${Object.keys(streamsDataCache.movieStreams).length}, authorizedEntries=${streamsDataCache.authorizedIndex.length}`
+);
 
 builder.defineStreamHandler(async (args) => {
   const imdbId = args ? args.id : null;
@@ -300,7 +294,7 @@ builder.defineStreamHandler(async (args) => {
     return { streams: [] };
   }
 
-  const data = loadStreams();
+  const data = streamsDataCache;
   const directItems = data.movieStreams[imdbId];
   const directStreams = sanitizeStreams(Array.isArray(directItems) ? directItems : []);
 
