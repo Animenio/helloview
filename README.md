@@ -1,136 +1,99 @@
 # Eugenio Private Addon
 
-Addon Stremio minimale che funziona come **stream provider per film aperti/cercati in Stremio**.
+Addon Stremio **stream-only** minimale per film, con playback esterno via `externalUrl`.
 
-## Flusso completo (search/open -> stream)
-1. L’utente apre un film in Stremio e il client invia una richiesta `stream` con `args.id` (IMDb, es. `tt0111161`).
-2. Il server legge i file split `streams_part_*.json` dalla root della repo deployata.
-3. I file validi vengono uniti in una singola struttura:
-   - merge di tutte le chiavi in `movieStreams`
-   - concat di tutti i record in `authorizedIndex`
-4. Dopo il merge viene fatta deduplica robusta:
-   - `movieStreams[imdbId]` dedup per `title + url`
-   - `authorizedIndex` dedup per priorità `imdbId`, altrimenti `title normalizzato + year`
-5. Lo stream handler prova prima il lookup diretto in `movieStreams[imdbId]`.
-6. Se non trova stream validi, prova fallback metadata TMDB (solo metadata) e matching su `authorizedIndex`.
-7. In ogni caso il risultato finale è sempre `{ streams: [...] }` oppure `{ streams: [] }` senza crash.
-
-## Vincoli rispettati
-- Solo sorgenti autorizzate/locali controllate dall’utente.
-- Nessuno scraping di siti terzi.
-- Nessuna integrazione con VixSrc o siti non autorizzati.
-- Nessun frontend aggiuntivo.
-- Nessun database complesso.
-- Nessun uso di Express.
+## Architettura finale
+- Manifest minimale (`stream` only).
+- Nessun catalog custom.
+- Nessun meta handler.
+- Unico handler: `defineStreamHandler`.
+- Lookup diretto solo per IMDb ID (`tt...`).
+- Nessun TMDB.
+- Nessun matching titolo/anno/original title.
+- Nessun fallback metadata.
+- Nessuna deduplica sofisticata.
 
 ## Manifest
-Il manifest è stream-first e supporta:
-- `resources: ["stream"]`
-- `types: ["movie"]`
-- `idPrefixes: ["tt"]`
-- `catalogs: []`
-- `version: "1.2.1"`
+- `id`: `com.eugenio.privateaddon`
+- `version`: `2.0.0`
+- `name`: `Eugenio Private Addon`
+- `description`: `Private Stremio addon for external playback`
+- `resources`: `["stream"]`
+- `types`: `["movie"]`
+- `idPrefixes`: `["tt"]`
+- `catalogs`: `[]`
 
-## Caricamento split files
-- Il loader cerca **solo** file che matchano esattamente `streams_part_XX.json` (due cifre).
-- I file sono ordinati in modo numerico (`01`, `02`, ..., `20`).
-- Se un file è malformato, viene loggato e ignorato, ma il caricamento continua.
-- `streams.json` è ignorato di default e usato solo come fallback opzionale se mancano totalmente i file split.
-- Se non esiste nessuna sorgente valida, il server usa fallback sicuro:
-  - `{ "movieStreams": {}, "authorizedIndex": [] }`
+## Sorgente dati
+L’addon usa solo file JSON locali nella repo:
+1. **Primario**: tutti i file `streams_part_*.json`
+2. **Fallback opzionale**: `streams.json` (solo se non ci sono file parte)
 
-## Formato richiesto per ogni file parte
-Ogni file parte deve avere la forma seguente:
+### Regole loader
+- Cerca file con pattern `streams_part_XX.json`.
+- Merge semplice delle chiavi `movieStreams`.
+- Se lo stesso IMDb ID compare in più file, concatena gli array.
+- `authorizedIndex` viene ignorato completamente anche se presente.
+
+## Formato richiesto
+Ogni file deve contenere `movieStreams` nel formato seguente:
+
 ```json
 {
   "movieStreams": {
     "tt1254207": [
       {
-        "title": "Big Buck Bunny - HTTPS HLS",
-        "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+        "title": "Big Buck Bunny - External Player",
+        "externalUrl": "https://example.com/external/movie/1254207"
       }
     ]
-  },
-  "authorizedIndex": [
-    {
-      "imdbId": "tt0111161",
-      "title": "The Shawshank Redemption",
-      "year": 1994,
-      "streams": [
-        {
-          "title": "Authorized stream",
-          "url": "https://example.com/authorized/shawshank.m3u8"
-        }
-      ]
-    }
-  ]
+  }
 }
 ```
 
-## Differenza tra le sezioni dati
-- `movieStreams`: lookup diretto `IMDb ID -> streams`.
-- `authorizedIndex`: fallback tramite metadata (`title/originalTitle/year`) -> `streams`.
+## Comportamento stream handler
+Per ogni richiesta `stream`:
+1. legge `args.id` come IMDb ID
+2. prende `movieStreams[imdbId]`
+3. applica sanitizzazione minima
+4. risponde:
+   - `{ streams: [{ title, externalUrl }] }` se trova risultati validi
+   - `{ streams: [] }` altrimenti
 
-## Matching logic su `authorizedIndex`
-Priorità del resolver:
-1. `imdbId` esatto
-2. `title` normalizzato + `year`
-3. `originalTitle` normalizzato + `year`
+## Sanitizzazione stream
+Accetta solo item con:
+- `title` valido (stringa non vuota)
+- `externalUrl` valido (`http/https`)
 
-La normalizzazione rende il matching robusto a:
-- accenti
-- punteggiatura
-- maiuscole/minuscole
-- spazi multipli
+Scarta:
+- item malformati
+- item con `url`
+- item senza `externalUrl`
 
-## Requirement per playback interno Stremio
-Per garantire playback interno:
-- usare sempre `url` (HTTP/HTTPS), **mai** `externalUrl`
-- usare URL diretti media (`.m3u8`, `.mp4`, `.webm`, `.mov`, `.mkv`)
-- URL tipo pagine/player (`/watch`, `/embed`, `/player`, `.html`) vengono scartati come non idonei
+`behaviorHints` viene mantenuto solo se è un oggetto valido.
 
-## Logging (senza segreti)
-Per ogni richiesta stream vengono loggati:
-- `stream request imdbId`
-- `direct lookup hit yes/no`
-- `metadata lookup success yes/no`
-- `authorized match found yes/no`
-- `streams returned count`
-
-Per la sanitizzazione stream vengono loggati anche i motivi di scarto:
-- `invalid_url`
-- `externalUrl_not_allowed`
-- `non_direct_media_url`
-
-## TMDB
-TMDB è opzionale e usato **solo per metadata** durante la risoluzione secondaria.
-Variabili supportate:
-- `TMDB_BEARER_TOKEN` (preferito)
-- `TMDB_API_KEY` (fallback)
+## Logging minimale
+Log essenziali:
+- startup
+- numero file parte trovati
+- IMDb richiesto
+- hit/miss
+- numero stream restituiti
 
 ## Avvio locale
 ```bash
 npm install
 npm start
 ```
+
 Manifest locale:
 - `http://localhost:7000/manifest.json`
 
 ## Deploy Render
-1. Push su GitHub.
-2. Crea Web Service su Render.
-3. Build command: `npm install`
-4. Start command: `npm start`
-5. (Opzionale) imposta `TMDB_BEARER_TOKEN` / `TMDB_API_KEY`.
-6. Re-deploy/restart per applicare env vars.
+La compatibilità con Render resta invariata:
+- nessun Express
+- nessun database
+- nessun frontend
+- file JSON letti dal filesystem della repo deployata (`__dirname`)
 
 Manifest deploy:
 - `https://<service-name>.onrender.com/manifest.json`
-
-## Nota Render e filesystem
-I file JSON split vengono letti direttamente dal filesystem della repo deployata (`__dirname`).
-Quindi su Render i `streams_part_*.json` devono essere presenti nel deploy.
-
-## Nota catalogo
-Questo addon **non costruisce un catalogo globale proprio**: usa direttamente il search/catalog già presenti in Stremio.
-Il playback compare solo quando esiste uno stream valido nei `streams_part_*.json` (o fallback `streams.json`); in caso contrario ritorna `streams: []`.
