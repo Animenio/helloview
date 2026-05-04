@@ -3,7 +3,7 @@ const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
 const PORT = process.env.PORT || 7000;
 
 // Sostituisci la stringa sottostante con la tua vera Chiave API v3 di TMDB
-const TMDB_API_KEY = 'INSERISCI_QUI_LA_TUA_CHIAVE_API';
+const TMDB_API_KEY = '8fb300665dd3bffe6ec5b08df4d68ed7';
 
 const manifest = {
   id: 'com.eugenio.vixsrc',
@@ -18,7 +18,7 @@ const manifest = {
 
 // Funzione per convertire l'ID IMDb in TMDB usando le API di The Movie Database
 async function convertImdbToTmdb(imdbId, type) {
-  if (!TMDB_API_KEY || TMDB_API_KEY === 'INSERISCI_QUI_LA_TUA_CHIAVE_API') {
+  if (!TMDB_API_KEY || TMDB_API_KEY === '8fb300665dd3bffe6ec5b08df4d68ed7') {
     console.error("[TMDB] Errore: Chiave API mancante.");
     return null;
   }
