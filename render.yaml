@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: eugenio-private-stremio-addon
+    name: eugenio-vixsrc-addon
     env: node
     plan: free
     buildCommand: npm install
