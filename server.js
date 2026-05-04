@@ -11,13 +11,13 @@ const manifest = {
   name: 'Eugenio Private Addon',
   description: 'Private Stremio addon for external playback',
   resources: ['stream'],
-  types: ['movie'],
+  types: ['movie', 'series'],
   idPrefixes: ['tt'],
   catalogs: []
 };
 
 function emptyData() {
-  return { movieStreams: {} };
+  return { movieStreams: {}, seriesStreams: {} };
 }
 
 function getStreamPartFiles() {
@@ -37,7 +37,7 @@ function getStreamPartFiles() {
   }
 }
 
-function mergeMovieStreams(parts) {
+function mergeStreams(parts) {
   const merged = emptyData();
 
   if (!Array.isArray(parts)) {
@@ -49,21 +49,29 @@ function mergeMovieStreams(parts) {
       return;
     }
 
-    if (!part.movieStreams || typeof part.movieStreams !== 'object' || Array.isArray(part.movieStreams)) {
-      return;
+    // Merge Movies
+    if (part.movieStreams && typeof part.movieStreams === 'object' && !Array.isArray(part.movieStreams)) {
+      Object.entries(part.movieStreams).forEach(([imdbId, streams]) => {
+        if (!Array.isArray(streams)) return;
+
+        if (!Array.isArray(merged.movieStreams[imdbId])) {
+          merged.movieStreams[imdbId] = [];
+        }
+        merged.movieStreams[imdbId].push(...streams);
+      });
     }
 
-    Object.entries(part.movieStreams).forEach(([imdbId, streams]) => {
-      if (!Array.isArray(streams)) {
-        return;
-      }
+    // Merge Series
+    if (part.seriesStreams && typeof part.seriesStreams === 'object' && !Array.isArray(part.seriesStreams)) {
+      Object.entries(part.seriesStreams).forEach(([episodeId, streams]) => {
+        if (!Array.isArray(streams)) return;
 
-      if (!Array.isArray(merged.movieStreams[imdbId])) {
-        merged.movieStreams[imdbId] = [];
-      }
-
-      merged.movieStreams[imdbId].push(...streams);
-    });
+        if (!Array.isArray(merged.seriesStreams[episodeId])) {
+          merged.seriesStreams[episodeId] = [];
+        }
+        merged.seriesStreams[episodeId].push(...streams);
+      });
+    }
   });
 
   return merged;
@@ -86,7 +94,7 @@ function loadStreams() {
       return acc;
     }, []);
 
-    return mergeMovieStreams(parts);
+    return mergeStreams(parts);
   }
 
   const fallbackPath = path.join(STREAMS_DIR, 'streams.json');
@@ -95,13 +103,13 @@ function loadStreams() {
       const raw = fs.readFileSync(fallbackPath, 'utf8');
       const parsed = JSON.parse(raw);
       console.log('[startup] using fallback streams.json');
-      return mergeMovieStreams([parsed]);
+      return mergeStreams([parsed]);
     } catch (error) {
       console.error(`[streams] Failed to load fallback streams.json: ${error.message}`);
     }
   }
 
-  console.warn('[startup] no valid stream source found, using empty movieStreams');
+  console.warn('[startup] no valid stream source found, using empty streams data');
   return emptyData();
 }
 
@@ -149,16 +157,26 @@ const streamData = loadStreams();
 const builder = new addonBuilder(manifest);
 
 builder.defineStreamHandler((args) => {
-  const imdbId = args && typeof args.id === 'string' ? args.id.trim() : '';
-  console.log(`[stream] request imdbId=${imdbId || 'n/a'}`);
+  const type = args && args.type ? args.type : '';
+  const id = args && typeof args.id === 'string' ? args.id.trim() : '';
+  
+  console.log(`[stream] request type=${type} id=${id || 'n/a'}`);
 
-  if (!imdbId) {
+  if (!id) {
     console.log('[stream] hit=no');
     console.log('[stream] streams returned=0');
     return { streams: [] };
   }
 
-  const streams = sanitizeStreams(streamData.movieStreams[imdbId] || []);
+  let rawStreams = [];
+
+  if (type === 'movie') {
+    rawStreams = streamData.movieStreams[id] || [];
+  } else if (type === 'series') {
+    rawStreams = streamData.seriesStreams[id] || [];
+  }
+
+  const streams = sanitizeStreams(rawStreams);
   const hit = streams.length > 0;
 
   console.log(`[stream] hit=${hit ? 'yes' : 'no'}`);
