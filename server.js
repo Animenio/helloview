@@ -2,6 +2,9 @@ const { addonBuilder, serveHTTP } = require('stremio-addon-sdk');
 
 const PORT = process.env.PORT || 7000;
 
+// Sostituisci la stringa sottostante con la tua vera Chiave API v3 di TMDB
+const TMDB_API_KEY = 'INSERISCI_QUI_LA_TUA_CHIAVE_API';
+
 const manifest = {
   id: 'com.eugenio.vixsrc',
   version: '2.0.0',
@@ -9,49 +12,85 @@ const manifest = {
   description: 'Guarda film e serie tramite VixSrc API',
   resources: ['stream'],
   types: ['movie', 'series'],
-  // Aggiungiamo tmdb: ai prefissi per supportare i cataloghi TMDB, oltre ai classici tt di IMDb
   idPrefixes: ['tt', 'tmdb:'],
   catalogs: []
 };
 
+// Funzione per convertire l'ID IMDb in TMDB usando le API di The Movie Database
+async function convertImdbToTmdb(imdbId, type) {
+  if (!TMDB_API_KEY || TMDB_API_KEY === 'INSERISCI_QUI_LA_TUA_CHIAVE_API') {
+    console.error("[TMDB] Errore: Chiave API mancante.");
+    return null;
+  }
+
+  try {
+    const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+    // Nota: richiede Node.js 18 o superiore per usare fetch nativamente
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (type === 'movie' && data.movie_results && data.movie_results.length > 0) {
+      return data.movie_results[0].id;
+    } else if (type === 'series' && data.tv_results && data.tv_results.length > 0) {
+      return data.tv_results[0].id;
+    }
+  } catch (error) {
+    console.error("[TMDB] Errore durante la conversione:", error.message);
+  }
+  return null;
+}
+
 const builder = new addonBuilder(manifest);
 
-builder.defineStreamHandler((args) => {
+// Handler asincrono per gestire la chiamata di conversione
+builder.defineStreamHandler(async (args) => {
   const type = args.type;
-  const id = args.id;
+  const fullId = args.id;
   
-  console.log(`[stream] request type=${type} id=${id}`);
+  console.log(`[stream] Richiesta ricevuta: type=${type} id=${fullId}`);
 
-  if (!id) {
+  if (!fullId) {
     return { streams: [] };
   }
 
-  let streamUrl = '';
-  const parts = id.split(':');
-  let baseId = parts[0]; 
+  let tmdbId = null;
+  let season = null;
+  let episode = null;
 
-  // Gestione degli ID TMDB se l'utente usa un catalogo TMDB (es. tmdb:12345)
-  if (id.startsWith('tmdb:')) {
-    baseId = parts[1];
+  const parts = fullId.split(':');
+  const baseId = parts[0]; 
+
+  // Gestione diretta per cataloghi basati su TMDB (es. tmdb:12345:1:2)
+  if (fullId.startsWith('tmdb:')) {
+    tmdbId = parts[1];
     if (type === 'series') {
-      const season = parts[2];
-      const episode = parts[3];
-      // URL per le serie TV
-      streamUrl = `https://vixsrc.to/tv/${baseId}/${season}/${episode}?lang=it`;
-    } else {
-      // URL per i film
-      streamUrl = `https://vixsrc.to/movie/${baseId}?lang=it`;
+      season = parts[2];
+      episode = parts[3];
     }
+  } 
+  // Gestione classica Stremio basata su IMDb (es. tt1234567:1:2)
+  else if (fullId.startsWith('tt')) {
+    console.log(`[stream] Conversione di ${baseId} in ID TMDB...`);
+    tmdbId = await convertImdbToTmdb(baseId, type);
+    
+    if (type === 'series') {
+      season = parts[1];
+      episode = parts[2];
+    }
+  }
+
+  // Se la conversione fallisce o l'ID non è valido, non mostra risultati
+  if (!tmdbId) {
+    console.log(`[stream] Nessun ID TMDB trovato per ${baseId}`);
+    return { streams: [] };
+  }
+
+  // Generazione del link VixSrc
+  let streamUrl = '';
+  if (type === 'series') {
+    streamUrl = `https://vixsrc.to/tv/${tmdbId}/${season}/${episode}?lang=it`;
   } else {
-    // Gestione standard Stremio (IMDb ID: tt1234567). 
-    // Molti di questi siti iframe provano a risolvere anche l'IMDb ID se passato al posto del TMDB ID.
-    if (type === 'series') {
-      const season = parts[1];
-      const episode = parts[2];
-      streamUrl = `https://vixsrc.to/tv/${baseId}/${season}/${episode}?lang=it`;
-    } else {
-      streamUrl = `https://vixsrc.to/movie/${baseId}?lang=it`;
-    }
+    streamUrl = `https://vixsrc.to/movie/${tmdbId}?lang=it`;
   }
 
   const stream = {
@@ -60,12 +99,12 @@ builder.defineStreamHandler((args) => {
     externalUrl: streamUrl
   };
 
-  console.log(`[stream] URL generato: ${streamUrl}`);
+  console.log(`[stream] URL generato con successo: ${streamUrl}`);
 
   return { streams: [stream] };
 });
 
 serveHTTP(builder.getInterface(), { port: PORT });
 
-console.log(`[startup] Eugenio VixSrc Addon started on port ${PORT}`);
-console.log(`[startup] Local manifest URL: http://localhost:${PORT}/manifest.json`);
+console.log(`[startup] Eugenio VixSrc Addon avviato sulla porta ${PORT}`);
+console.log(`[startup] Installa in Stremio usando: http://localhost:${PORT}/manifest.json`);
