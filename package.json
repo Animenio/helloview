@@ -1,6 +1,7 @@
 {
-  "name": "private-stremio-addon",
-  "version": "1.0.1",
+  "name": "eugenio-vixsrc-addon",
+  "version": "2.0.0",
+  "description": "Stremio addon per VixSrc con integrazione TMDB",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
